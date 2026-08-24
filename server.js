@@ -65,17 +65,14 @@ async function sendWebhook(title, content, imageDataUri) {
   }
 }
 
-async function sendWeChatWork(title, content, imageDataUri) {
+async function sendWeChatWork(title, content, imageDataUri, imagePath) {
   const corpId = getSetting('wx_corpid') || '';
   const agentId = getSetting('wx_agentid') || '';
   const secret = getSetting('wx_secret') || '';
   const userIds = getSetting('wx_userid') || '';
+  const picBase = getSetting('wx_pic_base') || '';
   const msgFormat = getSetting('wx_message_format') || '[留言板]\n{title}\n\n{content}';
   if (!corpId || !agentId || !secret || !userIds) return;
-
-  const messageContent = msgFormat
-    .replace(/{title}/g, title)
-    .replace(/{content}/g, content || '');
 
   // 获取 access_token
   let accessToken;
@@ -92,59 +89,60 @@ async function sendWeChatWork(title, content, imageDataUri) {
     return;
   }
 
-  // 发送文字消息（有内容才发）
-  if (content && content.trim()) {
+  // 带图且配置了图片公网地址 → 发送 news 图文消息（picurl 走外链，不受 2MB 限制）
+  if (imagePath && picBase) {
+    const imgUrl = picBase.replace(/\/+$/, '') + '/uploads/' + imagePath;
+    const desc = (content && content.trim()) ? `📝留言：${content}` : '（仅图片留言）';
     try {
-      await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+      const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           touser: userIds,
-          msgtype: 'text',
+          msgtype: 'news',
           agentid: agentId,
-          text: { content: messageContent }
+          news: {
+            articles: [{
+              title: `🆕新留言｜${title}`,
+              description: desc,
+              picurl: imgUrl,
+              url: imgUrl
+            }]
+          }
         })
       });
+      const d = await resp.json();
+      if (d.errcode) console.error('企业微信发送 news 失败:', d.errmsg);
+      return;
     } catch (e) {
-      console.error('企业微信发送文字失败:', e.message);
+      console.error('企业微信发送 news 失败:', e.message);
+      return;
     }
   }
 
-  // 发送图片消息（企业微信需先上传素材拿 media_id；图片须 ≤2MB）
-  if (imageDataUri && imageDataUri.startsWith('data:image/')) {
-    try {
-      const comma = imageDataUri.indexOf(',');
-      const mimetype = (imageDataUri.slice(0, comma).match(/data:(image\/[a-zA-Z+]+)/) || [])[1] || 'image/jpeg';
-      const buffer = Buffer.from(imageDataUri.slice(comma + 1), 'base64');
-      if (buffer.length > 2 * 1024 * 1024) {
-        console.error('企业微信图片超过 2MB 限制，已跳过图片发送（仅文字）');
-      } else {
-        const ext = mimetype === 'image/png' ? 'png' : mimetype === 'image/webp' ? 'webp' : 'jpg';
-        const form = new FormData();
-        form.append('media', new Blob([buffer], { type: mimetype }), `image.${ext}`);
-        const uploadResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${accessToken}&type=image`, {
-          method: 'POST',
-          body: form
-        });
-        const uploadData = await uploadResp.json();
-        if (uploadData.errcode) {
-          console.error('企业微信上传图片失败:', uploadData.errmsg);
-        } else if (uploadData.media_id) {
-          await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              touser: userIds,
-              msgtype: 'image',
-              agentid: agentId,
-              image: { media_id: uploadData.media_id }
-            })
-          });
-        }
-      }
-    } catch (e) {
-      console.error('企业微信发送图片失败:', e.message);
-    }
+  // 无图，或未配置公网地址 → 发送文本消息
+  const messageContent = msgFormat
+    .replace(/{title}/g, title)
+    .replace(/{content}/g, content || '');
+  let text;
+  if (imagePath && !picBase) {
+    text = `🆕你有一条新留言（⚠️未配置图片公网地址，图片未推送）\n\n👨🏻用户：${title}\n📝留言：${content || '（仅图片）'}`;
+  } else {
+    text = `🆕你有一条新留言\n\n👨🏻用户：${title}\n📝留言：${content || ''}`;
+  }
+  try {
+    await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        touser: userIds,
+        msgtype: 'text',
+        agentid: agentId,
+        text: { content: text }
+      })
+    });
+  } catch (e) {
+    console.error('企业微信发送文字失败:', e.message);
   }
 }
 
@@ -215,7 +213,7 @@ app.post('/api/message', (req, res) => {
     const title = contact ? `${name.trim()}（${contact}）` : name.trim();
     await Promise.all([
       sendWebhook(title, textContent, imageDataUri),
-      sendWeChatWork(title, textContent, imageDataUri)
+      sendWeChatWork(title, textContent, imageDataUri, imagePath)
     ]);
 
     res.json({ id: info.lastInsertRowid, success: true });
@@ -266,7 +264,7 @@ app.delete('/api/messages', (req, res) => {
 
 // ============ API：更新配置 ============
 app.put('/api/settings', (req, res) => {
-  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat } = req.body;
+  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase } = req.body;
   const save = (key, value) => {
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value != null ? String(value) : '');
   };
@@ -277,6 +275,7 @@ app.put('/api/settings', (req, res) => {
   save('wx_secret', wxSecret);
   save('wx_userid', wxUserid);
   save('wx_message_format', wxMessageFormat);
+  save('wx_pic_base', wxPicBase);
   if (newPassword) {
     const salt = bcrypt.genSaltSync(10);
     save('admin_password', bcrypt.hashSync(newPassword, salt));
@@ -297,6 +296,7 @@ app.get('/api/settings', (req, res) => {
     wxSecret: settings.wx_secret || '',
     wxUserid: settings.wx_userid || '',
     wxMessageFormat: settings.wx_message_format || '[留言板]\n{title}\n\n{content}',
+    wxPicBase: settings.wx_pic_base || '',
     hasPassword: !!settings.admin_password
   });
 });

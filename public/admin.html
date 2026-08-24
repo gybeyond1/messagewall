@@ -127,6 +127,7 @@ a{text-decoration:none;color:inherit}
 {title}
 
 {content}</textarea><div class="hint">支持 {title} 和 {content} 变量</div></div>
+        <div class="fg"><label>图片公网地址</label><input type="text" id="wxPicBase" placeholder="https://msg.225600.xyz:1314"><div class="hint">带图留言走 news 图文推送，picurl/url 用「此地址/uploads/文件名」。须为公网可访问（企业微信服务器会来拉图）。例如你反代的 https://msg.225600.xyz:1314</div></div>
         <button class="btn btn-primary btn-sm" onclick="testWx()">🧪 测试发送</button>
         <div id="wxTestResult" style="font-size:13px;margin-top:6px"></div>
       </div>
@@ -198,6 +199,7 @@ async function loadSettings() {
     document.getElementById('wxSecret').value = data.wxSecret || '';
     document.getElementById('wxUserid').value = data.wxUserid || '';
     document.getElementById('wxMessageFormat').value = data.wxMessageFormat || '[留言板]\n{title}\n\n{content}';
+    document.getElementById('wxPicBase').value = data.wxPicBase || '';
   } catch(e) {}
 }
 
@@ -210,10 +212,11 @@ async function saveSettings() {
   const wxSecret = document.getElementById('wxSecret').value.trim();
   const wxUserid = document.getElementById('wxUserid').value.trim();
   const wxMessageFormat = document.getElementById('wxMessageFormat').value.trim();
+  const wxPicBase = document.getElementById('wxPicBase').value.trim();
   await fetch(API + '/settings', {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({webhookUrl:url, webhookEnabled:enabled, newPassword:newPwd,
-      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat})
+      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase})
   });
   const msg = document.getElementById('settingsMsg');
   msg.textContent = '✅ 设置已保存'; msg.style.color = '#27ae60';
