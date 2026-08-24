@@ -65,7 +65,7 @@ async function sendWebhook(title, content, imageDataUri) {
   }
 }
 
-async function sendWeChatWork(title, content) {
+async function sendWeChatWork(title, content, imageDataUri) {
   const corpId = getSetting('wx_corpid') || '';
   const agentId = getSetting('wx_agentid') || '';
   const secret = getSetting('wx_secret') || '';
@@ -73,10 +73,9 @@ async function sendWeChatWork(title, content) {
   const msgFormat = getSetting('wx_message_format') || '[留言板]\n{title}\n\n{content}';
   if (!corpId || !agentId || !secret || !userIds) return;
 
-  // 解析消息格式
   const messageContent = msgFormat
     .replace(/{title}/g, title)
-    .replace(/{content}/g, content);
+    .replace(/{content}/g, content || '');
 
   // 获取 access_token
   let accessToken;
@@ -93,22 +92,59 @@ async function sendWeChatWork(title, content) {
     return;
   }
 
-  // 发送消息
-  try {
-    await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        touser: userIds,
-        msgtype: 'text',
-        agentid: agentId,
-        text: {
-          content: messageContent
+  // 发送文字消息（有内容才发）
+  if (content && content.trim()) {
+    try {
+      await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          touser: userIds,
+          msgtype: 'text',
+          agentid: agentId,
+          text: { content: messageContent }
+        })
+      });
+    } catch (e) {
+      console.error('企业微信发送文字失败:', e.message);
+    }
+  }
+
+  // 发送图片消息（企业微信需先上传素材拿 media_id；图片须 ≤2MB）
+  if (imageDataUri && imageDataUri.startsWith('data:image/')) {
+    try {
+      const comma = imageDataUri.indexOf(',');
+      const mimetype = (imageDataUri.slice(0, comma).match(/data:(image\/[a-zA-Z+]+)/) || [])[1] || 'image/jpeg';
+      const buffer = Buffer.from(imageDataUri.slice(comma + 1), 'base64');
+      if (buffer.length > 2 * 1024 * 1024) {
+        console.error('企业微信图片超过 2MB 限制，已跳过图片发送（仅文字）');
+      } else {
+        const ext = mimetype === 'image/png' ? 'png' : mimetype === 'image/webp' ? 'webp' : 'jpg';
+        const form = new FormData();
+        form.append('media', new Blob([buffer], { type: mimetype }), `image.${ext}`);
+        const uploadResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${accessToken}&type=image`, {
+          method: 'POST',
+          body: form
+        });
+        const uploadData = await uploadResp.json();
+        if (uploadData.errcode) {
+          console.error('企业微信上传图片失败:', uploadData.errmsg);
+        } else if (uploadData.media_id) {
+          await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              touser: userIds,
+              msgtype: 'image',
+              agentid: agentId,
+              image: { media_id: uploadData.media_id }
+            })
+          });
         }
-      })
-    });
-  } catch (e) {
-    console.error('企业微信发送失败:', e.message);
+      }
+    } catch (e) {
+      console.error('企业微信发送图片失败:', e.message);
+    }
   }
 }
 
@@ -179,7 +215,7 @@ app.post('/api/message', (req, res) => {
     const title = contact ? `${name.trim()}（${contact}）` : name.trim();
     await Promise.all([
       sendWebhook(title, textContent, imageDataUri),
-      sendWeChatWork(title, textContent)
+      sendWeChatWork(title, textContent, imageDataUri)
     ]);
 
     res.json({ id: info.lastInsertRowid, success: true });
