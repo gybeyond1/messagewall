@@ -123,6 +123,10 @@ a{text-decoration:none;color:inherit}
         <div class="fg"><label>AgentId</label><input type="text" id="wxAgentid" placeholder="应用的 AgentId"></div>
         <div class="fg"><label>Secret</label><input type="password" id="wxSecret" placeholder="应用的 Secret"></div>
         <div class="fg"><label>UserIds</label><input type="text" id="wxUserid" placeholder="接收消息的员工UserID，多人逗号分隔"><div class="hint">在通讯录中点击员工，URL 里的 corpid 后面的部分就是 userid</div></div>
+        <div class="fg"><label>消息格式</label><textarea id="wxMessageFormat" placeholder="[留言板]&#10;{title}&#10;&#10;{content}">[留言板]
+{title}
+
+{content}</textarea><div class="hint">支持 {title} 和 {content} 变量</div></div>
         <button class="btn btn-primary btn-sm" onclick="testWx()">🧪 测试发送</button>
         <div id="wxTestResult" style="font-size:13px;margin-top:6px"></div>
       </div>
@@ -193,6 +197,7 @@ async function loadSettings() {
     document.getElementById('wxAgentid').value = data.wxAgentid || '';
     document.getElementById('wxSecret').value = data.wxSecret || '';
     document.getElementById('wxUserid').value = data.wxUserid || '';
+    document.getElementById('wxMessageFormat').value = data.wxMessageFormat || '[留言板]\n{title}\n\n{content}';
   } catch(e) {}
 }
 
@@ -204,10 +209,11 @@ async function saveSettings() {
   const wxAgentid = document.getElementById('wxAgentid').value.trim();
   const wxSecret = document.getElementById('wxSecret').value.trim();
   const wxUserid = document.getElementById('wxUserid').value.trim();
+  const wxMessageFormat = document.getElementById('wxMessageFormat').value.trim();
   await fetch(API + '/settings', {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({webhookUrl:url, webhookEnabled:enabled, newPassword:newPwd,
-      wxCorpid, wxAgentid, wxSecret, wxUserid})
+      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat})
   });
   const msg = document.getElementById('settingsMsg');
   msg.textContent = '✅ 设置已保存'; msg.style.color = '#27ae60';

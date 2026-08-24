@@ -70,7 +70,13 @@ async function sendWeChatWork(title, content) {
   const agentId = getSetting('wx_agentid') || '';
   const secret = getSetting('wx_secret') || '';
   const userIds = getSetting('wx_userid') || '';
+  const msgFormat = getSetting('wx_message_format') || '[留言板]\n{title}\n\n{content}';
   if (!corpId || !agentId || !secret || !userIds) return;
+
+  // 解析消息格式
+  const messageContent = msgFormat
+    .replace(/{title}/g, title)
+    .replace(/{content}/g, content);
 
   // 获取 access_token
   let accessToken;
@@ -97,7 +103,7 @@ async function sendWeChatWork(title, content) {
         msgtype: 'text',
         agentid: agentId,
         text: {
-          content: `[留言板]\n${title}\n\n${content}`
+          content: messageContent
         }
       })
     });
@@ -190,21 +196,20 @@ app.delete('/api/messages', (req, res) => {
 
 // ============ API：更新配置 ============
 app.put('/api/settings', (req, res) => {
-  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid } = req.body;
+  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat } = req.body;
   const save = (key, value) => {
-    if (value !== undefined) {
-      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value || '');
-    }
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value != null ? String(value) : '');
   };
   save('webhook_url', webhookUrl);
-  save('webhook_enabled', webhookEnabled);
+  save('webhook_enabled', webhookEnabled === true || webhookEnabled === 'true' ? 'true' : 'false');
   save('wx_corpid', wxCorpid);
   save('wx_agentid', wxAgentid);
   save('wx_secret', wxSecret);
   save('wx_userid', wxUserid);
+  save('wx_message_format', wxMessageFormat);
   if (newPassword) {
     const salt = bcrypt.genSaltSync(10);
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(newPassword, salt));
+    save('admin_password', bcrypt.hashSync(newPassword, salt));
   }
   res.json({ success: true });
 });
@@ -221,6 +226,7 @@ app.get('/api/settings', (req, res) => {
     wxAgentid: settings.wx_agentid || '',
     wxSecret: settings.wx_secret || '',
     wxUserid: settings.wx_userid || '',
+    wxMessageFormat: settings.wx_message_format || '[留言板]\n{title}\n\n{content}',
     hasPassword: !!settings.admin_password
   });
 });

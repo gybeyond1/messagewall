@@ -1,12 +1,11 @@
 version: '3.8'
-
 services:
   messagewall:
     image: gybeyond/messagewall:latest
     container_name: messagewall
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "3000:3000"
     environment:
       - DB_PATH=/app/data/messages.db
     volumes:
