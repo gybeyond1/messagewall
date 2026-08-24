@@ -10,3 +10,4 @@ services:
       - DB_PATH=/app/data/messages.db
     volumes:
       - ./data:/app/data
+      - ./uploads:/app/uploads
