@@ -32,13 +32,29 @@ jobs:
           outputs: type=docker,dest=/tmp/messagewall-latest.tar
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.0
-          files: /tmp/messagewall-latest.tar
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 获取仓库信息
+          REPO="gybeyond1/messagewall"
+          TAG="v1.0.0"
+          FILE="/tmp/messagewall-latest.tar"
+          
+          # 检查文件是否存在
+          ls -lh "$FILE"
+          
+          # 获取 release ID
+          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG" | jq -r '.id')
+          
+          echo "Release ID: $RELEASE_ID"
+          
+          # 上传 asset
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$FILE" \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=messagewall-latest.tar"
+          
+          echo "✅ Upload complete!"
 
       - name: Build and push to Docker Hub
         uses: docker/build-push-action@v5
