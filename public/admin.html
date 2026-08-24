@@ -113,7 +113,8 @@ a{text-decoration:none;color:inherit}
     <div class="page" id="page-settings">
       <h2>系统设置</h2>
       <div class="card"><h3>Webhook 通知</h3>
-        <div class="fg"><label>Webhook 地址</label><input type="text" id="hookUrl" placeholder="https://example.com/webhook"><div class="hint">留言提交后将 POST JSON 到该地址</div></div>
+        <div class="fg"><label>Webhook 地址</label><input type="text" id="hookUrl" placeholder="https://example.com/webhook"><button class="btn btn-primary btn-sm" id="testHookBtn" onclick="testWebhook()" style="margin-left:8px;white-space:nowrap">🧪 测试</button><div class="hint">留言提交后将 POST JSON 到该地址</div></div>
+        <div id="testResult" style="font-size:13px;margin-top:6px"></div>
         <div class="fg"><label>通知格式</label><textarea readonly style="background:#f5f5f5;color:#888;font-size:13px">{"title": "张三（13800138000）", "content": "你好，我在门外..."}</textarea><div class="hint">标题 = 姓名 + 联系方式(如有)，内容 = 留言正文</div></div>
         <div class="fg"><div class="toggle-row"><label class="toggle"><input type="checkbox" id="hookEnabled"><span class="slider"></span></label><span style="font-size:14px;color:#555">启用 Webhook 通知</span></div></div>
       </div>
@@ -195,6 +196,38 @@ async function saveSettings() {
   msg.textContent = '✅ 设置已保存'; msg.style.color = '#27ae60';
   document.getElementById('newPwd').value = '';
   setTimeout(() => msg.textContent='', 2000);
+}
+
+async function testWebhook() {
+  const url = document.getElementById('hookUrl').value.trim();
+  const btn = document.getElementById('testHookBtn');
+  const result = document.getElementById('testResult');
+  if (!url) { result.textContent = '⚠️ 请先填写 Webhook 地址'; result.style.color = '#e67e22'; return; }
+  btn.disabled = true; btn.textContent = '发送中...';
+  result.textContent = '';
+  try {
+    const res = await fetch(API + '/webhook/test', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        url,
+        title: '测试消息（来自留言板管理后台）',
+        content: '这是一条测试消息，如果你收到了说明 Webhook 配置正确。'
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      result.textContent = `✅ 发送成功！耗时 ${data.elapsed}ms，状态码 ${data.status}`;
+      result.style.color = '#27ae60';
+    } else {
+      result.textContent = `❌ 发送失败：${data.error || '未知错误'}`;
+      result.style.color = '#e74c3c';
+    }
+  } catch (e) {
+    result.textContent = `❌ 网络错误：${e.message}`;
+    result.style.color = '#e74c3c';
+  } finally {
+    btn.disabled = false; btn.textContent = '🧪 测试';
+  }
 }
 
 async function refreshAll() { await loadMessages(); updateStats(); }

@@ -7,8 +7,6 @@ const Database = require('better-sqlite3');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
-const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
-const WEBHOOK_ENABLED = process.env.WEBHOOK_ENABLED === 'true';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'messages.db');
 
 // 确保数据目录存在
@@ -71,12 +69,12 @@ app.post('/api/message', multer({ dest: 'uploads/' }).single('image'), async (re
   const info = stmt.run(name, content, contact || '', imagePath);
 
   // 发送 Webhook 通知
-  if (WEBHOOK_ENABLED && WEBHOOK_URL) {
-    const title = contact
-      ? `${name}（${contact}）`
-      : name;
+  const wUrl = db.prepare("SELECT value FROM settings WHERE key = 'webhook_url'").get()?.value || '';
+  const wEnabled = db.prepare("SELECT value FROM settings WHERE key = 'webhook_enabled'").get()?.value === 'true';
+  if (wEnabled && wUrl) {
+    const title = contact ? `${name}（${contact}）` : name;
     try {
-      await fetch(WEBHOOK_URL, {
+      await fetch(wUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, content })
@@ -157,6 +155,24 @@ app.get('/api/settings', (req, res) => {
     webhookEnabled: settings.webhook_enabled === 'true',
     hasPassword: !!settings.admin_password
   });
+});
+
+// ============ API：测试 Webhook ============
+app.post('/api/webhook/test', async (req, res) => {
+  const { url, title, content } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL 不能为空' });
+  try {
+    const start = Date.now();
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content })
+    });
+    const elapsed = Date.now() - start;
+    res.json({ success: resp.ok, status: resp.status, elapsed });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // ============ 启动 ============
