@@ -118,6 +118,14 @@ a{text-decoration:none;color:inherit}
         <div class="fg"><label>通知格式</label><textarea readonly style="background:#f5f5f5;color:#888;font-size:13px">{"title": "张三（13800138000）", "content": "你好，我在门外..."}</textarea><div class="hint">标题 = 姓名 + 联系方式(如有)，内容 = 留言正文</div></div>
         <div class="fg"><div class="toggle-row"><label class="toggle"><input type="checkbox" id="hookEnabled"><span class="slider"></span></label><span style="font-size:14px;color:#555">启用 Webhook 通知</span></div></div>
       </div>
+      <div class="card"><h3>企业微信通知</h3>
+        <div class="fg"><label>CorpID</label><input type="text" id="wxCorpid" placeholder="企业在企业微信的管理端获取"></div>
+        <div class="fg"><label>AgentId</label><input type="text" id="wxAgentid" placeholder="应用的 AgentId"></div>
+        <div class="fg"><label>Secret</label><input type="password" id="wxSecret" placeholder="应用的 Secret"></div>
+        <div class="fg"><label>UserIds</label><input type="text" id="wxUserid" placeholder="接收消息的员工UserID，多人逗号分隔"><div class="hint">在通讯录中点击员工，URL 里的 corpid 后面的部分就是 userid</div></div>
+        <button class="btn btn-primary btn-sm" onclick="testWx()">🧪 测试发送</button>
+        <div id="wxTestResult" style="font-size:13px;margin-top:6px"></div>
+      </div>
       <div class="card"><h3>修改管理员密码</h3>
         <div class="fg"><label>新密码</label><input type="password" id="newPwd" placeholder="留空则不修改"></div>
       </div>
@@ -181,6 +189,10 @@ async function loadSettings() {
     const data = await res.json();
     document.getElementById('hookUrl').value = data.webhookUrl || '';
     document.getElementById('hookEnabled').checked = !!data.webhookEnabled;
+    document.getElementById('wxCorpid').value = data.wxCorpid || '';
+    document.getElementById('wxAgentid').value = data.wxAgentid || '';
+    document.getElementById('wxSecret').value = data.wxSecret || '';
+    document.getElementById('wxUserid').value = data.wxUserid || '';
   } catch(e) {}
 }
 
@@ -188,14 +200,49 @@ async function saveSettings() {
   const url = document.getElementById('hookUrl').value.trim();
   const enabled = document.getElementById('hookEnabled').checked;
   const newPwd = document.getElementById('newPwd').value;
+  const wxCorpid = document.getElementById('wxCorpid').value.trim();
+  const wxAgentid = document.getElementById('wxAgentid').value.trim();
+  const wxSecret = document.getElementById('wxSecret').value.trim();
+  const wxUserid = document.getElementById('wxUserid').value.trim();
   await fetch(API + '/settings', {
     method:'PUT', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({webhookUrl:url, webhookEnabled:enabled, newPassword:newPwd})
+    body: JSON.stringify({webhookUrl:url, webhookEnabled:enabled, newPassword:newPwd,
+      wxCorpid, wxAgentid, wxSecret, wxUserid})
   });
   const msg = document.getElementById('settingsMsg');
   msg.textContent = '✅ 设置已保存'; msg.style.color = '#27ae60';
-  document.getElementById('newPwd').value = '';
   setTimeout(() => msg.textContent='', 2000);
+}
+
+async function testWx() {
+  const btn = event.target;
+  const result = document.getElementById('wxTestResult');
+  const corpId = document.getElementById('wxCorpid').value.trim();
+  const agentId = document.getElementById('wxAgentid').value.trim();
+  const secret = document.getElementById('wxSecret').value.trim();
+  const userId = document.getElementById('wxUserid').value.trim();
+  if (!corpId || !secret || !userId) { result.textContent = '⚠️ 请填写 CorpID、Secret 和 UserIds'; result.style.color = '#e67e22'; return; }
+  btn.disabled = true; btn.textContent = '发送中...';
+  result.textContent = '';
+  try {
+    const res = await fetch(API + '/wx/test', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ corpId, agentId, secret, userId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      result.textContent = `✅ 发送成功！耗时 ${data.elapsed}ms`;
+      result.style.color = '#27ae60';
+    } else {
+      result.textContent = `❌ 发送失败：${data.error || '未知错误'}`;
+      result.style.color = '#e74c3c';
+    }
+  } catch (e) {
+    result.textContent = `❌ 网络错误：${e.message}`;
+    result.style.color = '#e74c3c';
+  } finally {
+    btn.disabled = false; btn.textContent = '🧪 测试发送';
+  }
 }
 
 async function testWebhook() {

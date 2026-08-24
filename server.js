@@ -39,6 +39,72 @@ if (!passwordHash) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, salt));
 }
 
+// ============ 通知发送 ============
+function getSetting(key) {
+  return db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value;
+}
+
+async function sendWebhook(title, content) {
+  const wUrl = getSetting('webhook_url') || '';
+  const wEnabled = getSetting('webhook_enabled') === 'true';
+  if (!wEnabled || !wUrl) return;
+  try {
+    await fetch(wUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: "messagewall",
+        sourceName: "留言板",
+        sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。",
+        title,
+        content
+      })
+    });
+  } catch (e) {
+    console.error('Webhook 发送失败:', e.message);
+  }
+}
+
+async function sendWeChatWork(title, content) {
+  const corpId = getSetting('wx_corpid') || '';
+  const agentId = getSetting('wx_agentid') || '';
+  const secret = getSetting('wx_secret') || '';
+  const userIds = getSetting('wx_userid') || '';
+  if (!corpId || !agentId || !secret || !userIds) return;
+
+  // 获取 access_token
+  let accessToken;
+  try {
+    const tokenResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${corpId}&corpsecret=${secret}`);
+    const tokenData = await tokenResp.json();
+    if (tokenData.errcode) {
+      console.error('企业微信获取 token 失败:', tokenData.errmsg);
+      return;
+    }
+    accessToken = tokenData.access_token;
+  } catch (e) {
+    console.error('企业微信获取 token 失败:', e.message);
+    return;
+  }
+
+  // 发送消息
+  try {
+    await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        touser: userIds,
+        msgtype: 'text',
+        text: {
+          content: `[留言板]\n${title}\n\n${content}`
+        }
+      })
+    });
+  } catch (e) {
+    console.error('企业微信发送失败:', e.message);
+  }
+}
+
 // 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -69,28 +135,12 @@ app.post('/api/message', multer({ dest: 'uploads/' }).single('image'), async (re
   const stmt = db.prepare('INSERT INTO messages (name, content, contact, image_path) VALUES (?, ?, ?, ?)');
   const info = stmt.run(name, content, contact || '', imagePath);
 
-  // 发送 Webhook 通知
-  const wUrl = db.prepare("SELECT value FROM settings WHERE key = 'webhook_url'").get()?.value || '';
-  const wEnabled = db.prepare("SELECT value FROM settings WHERE key = 'webhook_enabled'").get()?.value === 'true';
-  if (wEnabled && wUrl) {
-    const title = contact ? `${name}（${contact}）` : name;
-    const payload = {
-      source: "messagewall",
-      sourceName: "留言板",
-      sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。留言人通过手机扫码进入网页填写信息后，系统自动将留言推送到配置的 Webhook 地址。",
-      title,
-      content
-    };
-    try {
-      await fetch(wUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } catch (e) {
-      console.error('Webhook 发送失败:', e.message);
-    }
-  }
+  // 发送通知
+  const title = contact ? `${name}（${contact}）` : name;
+  await Promise.all([
+    sendWebhook(title, content),
+    sendWeChatWork(title, content)
+  ]);
 
   res.json({ id: info.lastInsertRowid, success: true });
 });
@@ -137,15 +187,20 @@ app.delete('/api/messages', (req, res) => {
   res.json({ success: true });
 });
 
-// ============ API：更新 Webhook 配置 ============
+// ============ API：更新配置 ============
 app.put('/api/settings', (req, res) => {
-  const { webhookUrl, webhookEnabled, newPassword } = req.body;
-  if (webhookUrl !== undefined) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('webhook_url', webhookUrl || '');
-  }
-  if (webhookEnabled !== undefined) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('webhook_enabled', webhookEnabled ? 'true' : 'false');
-  }
+  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid } = req.body;
+  const save = (key, value) => {
+    if (value !== undefined) {
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value || '');
+    }
+  };
+  save('webhook_url', webhookUrl);
+  save('webhook_enabled', webhookEnabled);
+  save('wx_corpid', wxCorpid);
+  save('wx_agentid', wxAgentid);
+  save('wx_secret', wxSecret);
+  save('wx_userid', wxUserid);
   if (newPassword) {
     const salt = bcrypt.genSaltSync(10);
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(newPassword, salt));
@@ -153,7 +208,7 @@ app.put('/api/settings', (req, res) => {
   res.json({ success: true });
 });
 
-// ============ API：读取当前配置 ============
+// ============ API：读取配置 ============
 app.get('/api/settings', (req, res) => {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const settings = {};
@@ -161,6 +216,10 @@ app.get('/api/settings', (req, res) => {
   res.json({
     webhookUrl: settings.webhook_url || '',
     webhookEnabled: settings.webhook_enabled === 'true',
+    wxCorpid: settings.wx_corpid || '',
+    wxAgentid: settings.wx_agentid || '',
+    wxSecret: settings.wx_secret || '',
+    wxUserid: settings.wx_userid || '',
     hasPassword: !!settings.admin_password
   });
 });
@@ -177,13 +236,47 @@ app.post('/api/webhook/test', async (req, res) => {
       body: JSON.stringify({
         source: "messagewall",
         sourceName: "留言板",
-        sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。留言人通过手机扫码进入网页填写信息后，系统自动将留言推送到配置的 Webhook 地址。",
+        sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。",
         title,
         content
       })
     });
     const elapsed = Date.now() - start;
     res.json({ success: resp.ok, status: resp.status, elapsed });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ============ API：测试企业微信 ============
+app.post('/api/wx/test', async (req, res) => {
+  const { corpId, agentId, secret, userId } = req.body;
+  if (!corpId || !secret || !userId) {
+    return res.status(400).json({ error: '请填写完整的企业微信配置' });
+  }
+  try {
+    const start = Date.now();
+    const tokenResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${corpId}&corpsecret=${secret}`);
+    const tokenData = await tokenResp.json();
+    if (tokenData.errcode) {
+      return res.status(400).json({ success: false, error: tokenData.errmsg });
+    }
+    const msgResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${tokenData.access_token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        touser: userId,
+        msgtype: 'text',
+        text: { content: '[留言板测试] 这是一条测试消息，如果你收到了说明配置正确。' }
+      })
+    });
+    const msgData = await msgResp.json();
+    const elapsed = Date.now() - start;
+    if (msgData.errcode) {
+      res.json({ success: false, error: msgData.errmsg, elapsed });
+    } else {
+      res.json({ success: true, elapsed });
+    }
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
