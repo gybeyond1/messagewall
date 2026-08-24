@@ -10,44 +10,34 @@
   - Webhook：支持自定义接收端（AI 服务、自有服务器等）
   - 企业微信：支持自建应用消息推送
 - **图片上传**：留言时可附带图片（选填）
-- **Docker 部署**：64MB 轻量镜像，一键启动
+- **轻量镜像**：64MB，基于 Alpine Linux
 
-## 快速部署
+## 一键部署
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/gybeyond1/messagewall.git
-cd messagewall
-
-# 2. 创建 .env 文件（可选，默认值已够用）
-echo 'PORT=3000' > .env
-
-# 3. 启动服务
+# 创建项目目录并启动
+mkdir -p messagewall && cd messagewall
+cat > docker-compose.yml << 'EOF'
+version: '3.8'
+services:
+  messagewall:
+    image: gybeyond/messagewall:latest
+    container_name: messagewall
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DB_PATH=/app/data/messages.db
+    volumes:
+      - ./data:/app/data
+EOF
 docker compose up -d
-
-# 4. 访问
-# 留言页面：http://你的IP:3000/message
-# 管理后台：http://你的IP:3000/admin
-# 默认密码：admin123（首次登录后请在设置中修改）
 ```
 
-## 配置说明
-
-### 环境变量
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `PORT` | 服务端口 | `3000` |
-| `DB_PATH` | 数据库路径 | `/app/data/messages.db` |
-
-### 数据持久化
-
-挂载 `./data` 目录到容器，留言数据和配置都会保存在宿主机：
-
-```yaml
-volumes:
-  - ./data:/app/data
-```
+访问：
+- 留言页面：`http://你的IP:3000/message`
+- 管理后台：`http://你的IP:3000/admin`
+- 默认密码：`admin123`（首次登录后请在设置中修改）
 
 ## 通知配置
 
@@ -79,30 +69,12 @@ volumes:
 
 点击「🧪 测试发送」验证配置。
 
-## Docker 镜像
-
-镜像已发布到 Docker Hub：
-
-```bash
-docker pull gybeyond/messagewall:latest
-```
-
-镜像大小：**64MB**
-
-GitHub Release 中也提供了镜像下载链接，方便网络受限的环境。
-
 ## 项目结构
 
 ```
 messagewall/
-├── server.js          # Node.js 服务入口
-├── package.json       # 依赖配置
-├── Dockerfile         # 多阶段构建，优化镜像大小
-├── docker-compose.yml # Docker 部署配置
-├── public/
-│   ├── index.html     # 留言页面
-│   └── admin.html     # 管理后台
-└── data/              # 数据目录（需挂载）
+├── docker-compose.yml  # Docker 部署配置（只需这一个文件）
+├── data/               # 数据目录（自动创建，包含数据库和图片）
 ```
 
 ## 技术栈
@@ -110,16 +82,9 @@ messagewall/
 - **后端**：Node.js + Express
 - **数据库**：SQLite（better-sqlite3）
 - **前端**：原生 HTML/CSS/JS，无框架依赖
-- **部署**：Docker + GitHub Actions CI/CD
-
-## 注意事项
-
-1. **首次启动密码**：默认 `admin123`，进入管理后台后请在设置中修改
-2. **密码存储**：密码哈希存储在 SQLite 数据库中，重新部署不会被覆盖
-3. **图片存储**：上传图片保存在 `./data/uploads/` 目录，随数据一起备份
-4. **企业微信**：确保应用可见范围包含接收用户，否则消息可能发送失败
+- **部署**：Docker，多阶段构建优化镜像大小
 
 ## 相关链接
 
-- GitHub 仓库：https://github.com/gybeyond1/messagewall
+- GitHub：https://github.com/gybeyond1/messagewall
 - Docker Hub：https://hub.docker.com/r/gybeyond/messagewall
