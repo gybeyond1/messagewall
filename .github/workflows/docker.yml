@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and export to tar
+      - name: Build image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -29,21 +29,22 @@ jobs:
           tags: messagewall:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=docker,dest=/tmp/messagewall-latest.tar
+
+      - name: Save image as tar
+        run: |
+          docker save messagewall:latest -o messagewall-latest.tar
+          ls -lh messagewall-latest.tar
+          echo "FILE_SIZE=$(stat -c%s messagewall-latest.tar)" >> $GITHUB_ENV
 
       - name: Upload to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: gybeyond1/messagewall
+          TAG: v1.0.0
         run: |
-          # 获取仓库信息
-          REPO="gybeyond1/messagewall"
-          TAG="v1.0.0"
-          FILE="/tmp/messagewall-latest.tar"
-          
-          # 检查文件是否存在
-          ls -lh "$FILE"
-          
           # 获取 release ID
           RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$REPO/releases/tags/$TAG" | jq -r '.id')
+            "https://api.github.com/repos/$GITHUB_REPO/releases/tags/$TAG" | jq -r '.id')
           
           echo "Release ID: $RELEASE_ID"
           
@@ -51,12 +52,12 @@ jobs:
           curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/octet-stream" \
-            --data-binary @"$FILE" \
-            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=messagewall-latest.tar"
+            --data-binary @"messagewall-latest.tar" \
+            "https://uploads.github.com/repos/$GITHUB_REPO/releases/$RELEASE_ID/assets?name=messagewall-latest.tar"
           
           echo "✅ Upload complete!"
 
-      - name: Build and push to Docker Hub
+      - name: Push to Docker Hub
         uses: docker/build-push-action@v5
         with:
           context: .
