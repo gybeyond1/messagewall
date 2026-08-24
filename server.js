@@ -73,11 +73,18 @@ app.post('/api/message', multer({ dest: 'uploads/' }).single('image'), async (re
   const wEnabled = db.prepare("SELECT value FROM settings WHERE key = 'webhook_enabled'").get()?.value === 'true';
   if (wEnabled && wUrl) {
     const title = contact ? `${name}（${contact}）` : name;
+    const payload = {
+      source: "messagewall",
+      sourceName: "留言板",
+      sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。留言人通过手机扫码进入网页填写信息后，系统自动将留言推送到配置的 Webhook 地址。",
+      title,
+      content
+    };
     try {
       await fetch(wUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content })
+        body: JSON.stringify(payload)
       });
     } catch (e) {
       console.error('Webhook 发送失败:', e.message);
@@ -166,7 +173,13 @@ app.post('/api/webhook/test', async (req, res) => {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content })
+      body: JSON.stringify({
+        source: "messagewall",
+        sourceName: "留言板",
+        sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。留言人通过手机扫码进入网页填写信息后，系统自动将留言推送到配置的 Webhook 地址。",
+        title,
+        content
+      })
     });
     const elapsed = Date.now() - start;
     res.json({ success: resp.ok, status: resp.status, elapsed });
