@@ -20,6 +20,26 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Build and export to tar
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: messagewall:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/messagewall-latest.tar
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.0
+          files: /tmp/messagewall-latest.tar
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push to Docker Hub
         uses: docker/build-push-action@v5
         with:
@@ -27,18 +47,3 @@ jobs:
           push: true
           tags: gybeyond/messagewall:latest
           cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Save image as tar
-        run: |
-          docker save gybeyond/messagewall:latest -o messagewall-latest.tar
-          ls -lh messagewall-latest.tar
-
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.0
-          files: messagewall-latest.tar
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
