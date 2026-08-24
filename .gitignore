@@ -1,0 +1,9 @@
+# Ignore local node_modules
+node_modules/
+
+# Ignore data and uploads (mounted via volume in Docker)
+data/
+uploads/
+
+# Local env override
+.env

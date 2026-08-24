@@ -1,0 +1,16 @@
+{
+  "name": "messagewall",
+  "version": "1.0.0",
+  "description": "轻量级留言板 - 扫码/NFC触发",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3"
+  }
+}
