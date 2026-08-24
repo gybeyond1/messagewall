@@ -9,8 +9,6 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - WEBHOOK_URL=${WEBHOOK_URL:-}
-      - WEBHOOK_ENABLED=${WEBHOOK_ENABLED:-false}
       - DB_PATH=/app/data/messages.db
     volumes:
       - ./data:/app/data
