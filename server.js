@@ -95,6 +95,7 @@ async function sendWeChatWork(title, content) {
       body: JSON.stringify({
         touser: userIds,
         msgtype: 'text',
+        agentid: agentId,
         text: {
           content: `[留言板]\n${title}\n\n${content}`
         }
