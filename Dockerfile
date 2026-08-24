@@ -1,22 +1,16 @@
-FROM node:22-slim
-
-WORKDIR /app
-
-# 安装编译 better-sqlite3 所需的依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
-
+# 第一阶段：编译 better-sqlite3 原生模块
+FROM node:22 AS builder
+WORKDIR /build
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --production && \
+    find node_modules -name "better-sqlite3" -exec sh -c 'cd "{}" && npm run build-release 2>/dev/null || true' \;
 
+# 第二阶段：最小运行时
+FROM node:22-slim
+WORKDIR /app
+COPY --from=builder /build/node_modules ./node_modules
 COPY . .
-
-# 创建数据目录并设置权限
-RUN mkdir -p /app/data && chmod 777 /app/data
-
+RUN mkdir -p /app/data /app/uploads && chmod 777 /app/data /app/uploads
 EXPOSE 3000
-
 ENV NODE_ENV=production
-
 CMD ["node", "server.js"]
