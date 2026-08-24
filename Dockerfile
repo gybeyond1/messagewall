@@ -2,6 +2,11 @@ FROM node:22-slim
 
 WORKDIR /app
 
+# 安装编译 better-sqlite3 所需的依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 RUN npm install --production
 
