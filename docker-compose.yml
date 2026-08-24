@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   messagewall:
-    build: .
+    image: gybeyond/messagewall:latest
     container_name: messagewall
     restart: unless-stopped
     ports:
