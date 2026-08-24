@@ -1,6 +1,6 @@
 {
   "name": "messagewall",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "轻量级留言板 - 扫码/NFC触发",
   "main": "server.js",
   "scripts": {

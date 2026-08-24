@@ -302,6 +302,7 @@ app.post('/api/wx/test', async (req, res) => {
       body: JSON.stringify({
         touser: userId,
         msgtype: 'text',
+        agentid: agentId,
         text: { content: '[留言板测试] 这是一条测试消息，如果你收到了说明配置正确。' }
       })
     });
