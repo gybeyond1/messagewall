@@ -8,7 +8,6 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     environment:
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - DB_PATH=/app/data/messages.db
     volumes:
       - ./data:/app/data

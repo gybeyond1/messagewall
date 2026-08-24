@@ -7,7 +7,7 @@ const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'messages.db');
 
 // 确保数据目录存在
@@ -32,11 +32,11 @@ db.exec(`
   );
 `);
 
-// 初始化管理员密码
+// 初始化管理员密码（首次启动且数据库无记录时写入默认密码）
 const passwordHash = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password') || null;
 if (!passwordHash) {
   const salt = bcrypt.genSaltSync(10);
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(ADMIN_PASSWORD, salt));
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, salt));
 }
 
 // 中间件
