@@ -44,7 +44,13 @@ function getSetting(key) {
   return db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value;
 }
 
-async function sendWebhook(title, content) {
+function buildWebhookBody(title, content, imageDataUri) {
+  const body = { source: "messagewall", title, content };
+  if (imageDataUri) body.image = imageDataUri;
+  return body;
+}
+
+async function sendWebhook(title, content, imageDataUri) {
   const wUrl = getSetting('webhook_url') || '';
   const wEnabled = getSetting('webhook_enabled') === 'true';
   if (!wEnabled || !wUrl) return;
@@ -52,13 +58,7 @@ async function sendWebhook(title, content) {
     await fetch(wUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source: "messagewall",
-        sourceName: "留言板",
-        sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。",
-        title,
-        content
-      })
+      body: JSON.stringify(buildWebhookBody(title, content, imageDataUri))
     });
   } catch (e) {
     console.error('Webhook 发送失败:', e.message);
@@ -122,6 +122,18 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+// ============ 图片上传配置 ============
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const upload = multer({
+  dest: uploadsDir,
+  limits: { fileSize: MAX_IMAGE_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('仅支持 JPEG / PNG / WebP 格式的图片'));
+  }
+});
+
 // ============ 前端路由 ============
 app.get('/message', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -132,24 +144,46 @@ app.get('/admin', (req, res) => {
 });
 
 // ============ API：提交留言 ============
-app.post('/api/message', multer({ dest: 'uploads/' }).single('image'), async (req, res) => {
-  const { name, content, contact } = req.body;
-  if (!name || !content) {
-    return res.status(400).json({ error: '姓名和留言内容不能为空' });
-  }
+app.post('/api/message', (req, res) => {
+  upload.single('image')(req, res, async (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? '图片不能超过 5MB' : err.message;
+      return res.status(400).json({ error: msg });
+    }
+    const { name, content, contact } = req.body;
+    const textContent = (content || '').toString();
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: '姓名不能为空' });
+    }
+    if (!textContent.trim() && !req.file) {
+      return res.status(400).json({ error: '留言内容和图片至少填写一项' });
+    }
 
-  const imagePath = req.file ? path.basename(req.file.filename) : '';
-  const stmt = db.prepare('INSERT INTO messages (name, content, contact, image_path) VALUES (?, ?, ?, ?)');
-  const info = stmt.run(name, content, contact || '', imagePath);
+    // 保存图片（补扩展名便于管理后台展示），并读出 base64 用于 webhook
+    let imagePath = '';
+    let imageDataUri = '';
+    if (req.file) {
+      const extMap = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+      const ext = extMap[req.file.mimetype] || 'jpg';
+      const newName = req.file.filename + '.' + ext;
+      fs.renameSync(req.file.path, path.join(uploadsDir, newName));
+      imagePath = newName;
+      const buf = fs.readFileSync(path.join(uploadsDir, newName));
+      imageDataUri = `data:${req.file.mimetype};base64,${buf.toString('base64')}`;
+    }
 
-  // 发送通知
-  const title = contact ? `${name}（${contact}）` : name;
-  await Promise.all([
-    sendWebhook(title, content),
-    sendWeChatWork(title, content)
-  ]);
+    const stmt = db.prepare('INSERT INTO messages (name, content, contact, image_path) VALUES (?, ?, ?, ?)');
+    const info = stmt.run(name.trim(), textContent, contact || '', imagePath);
 
-  res.json({ id: info.lastInsertRowid, success: true });
+    // 发送通知
+    const title = contact ? `${name.trim()}（${contact}）` : name.trim();
+    await Promise.all([
+      sendWebhook(title, textContent, imageDataUri),
+      sendWeChatWork(title, textContent)
+    ]);
+
+    res.json({ id: info.lastInsertRowid, success: true });
+  });
 });
 
 // ============ API：管理员认证 ============
@@ -240,13 +274,7 @@ app.post('/api/webhook/test', async (req, res) => {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source: "messagewall",
-        sourceName: "留言板",
-        sourceDesc: "一个轻量级扫码/NFC触发留言板应用，用于访客敲门留言。",
-        title,
-        content
-      })
+      body: JSON.stringify(buildWebhookBody(title || '测试员', content || '这是一条测试留言', ''))
     });
     const elapsed = Date.now() - start;
     res.json({ success: resp.ok, status: resp.status, elapsed });

@@ -273,9 +273,9 @@
         </div>
 
         <div class="field">
-          <label>留言内容<span class="required">*</span></label>
-          <textarea id="content" placeholder="写下你想说的话..." maxlength="500" required></textarea>
-          <div class="error-msg" id="contentErr">请输入留言内容</div>
+          <label>留言内容 <span style="color:#bbb;font-weight:400">(选填，或与图片二选一)</span></label>
+          <textarea id="content" placeholder="写下你想说的话...（也可只发图片）" maxlength="500"></textarea>
+          <div class="error-msg" id="contentErr">请填写内容或添加图片</div>
         </div>
 
         <div class="field">
@@ -352,7 +352,7 @@
         document.getElementById('nameErr').style.display = 'block';
         valid = false;
       }
-      if (!content) {
+      if (!content && !selectedFile) {
         document.getElementById('contentErr').style.display = 'block';
         valid = false;
       }
