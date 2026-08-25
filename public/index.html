@@ -2,119 +2,151 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#e8ebf3">
   <title>留言板</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #e8ebf3;
+      --surface: #e8ebf3;
+      --shadow-light: #ffffff;
+      --shadow-dark: #c2c8d6;
+      --text: #41485a;
+      --text-soft: #828aa0;
+      --text-faint: #aab0c0;
+      --accent: #6c5ce7;
+      --accent-strong: #5b4fd6;
+      --danger: #e15a6d;
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    html, body { height: 100%; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
-      background: linear-gradient(135deg, #e0f7fa 0%, #f3e5f5 100%);
-      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      /* 适配刘海/灵动岛安全区 */
+      padding: calc(20px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
+      -webkit-font-smoothing: antialiased;
     }
 
+    /* ===== 新拟态卡片：从背景"凸出" ===== */
     .card {
-      background: #fff;
-      border-radius: 20px;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.08);
+      background: var(--surface);
+      border-radius: var(--radius);
       width: 100%;
-      max-width: 460px;
-      overflow: hidden;
+      max-width: 440px;
+      padding: 26px 22px;
+      box-shadow:
+        14px 14px 28px var(--shadow-dark),
+        -14px -14px 28px var(--shadow-light);
     }
 
     .card-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
-      padding: 32px 28px 24px;
       text-align: center;
+      margin-bottom: 22px;
+    }
+
+    .card-header .badge {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 14px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      background: var(--surface);
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
     }
 
     .card-header h1 {
-      font-size: 22px;
-      font-weight: 600;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
       margin-bottom: 6px;
     }
 
     .card-header p {
       font-size: 13px;
-      opacity: 0.85;
+      color: var(--text-soft);
     }
 
-    .card-body {
-      padding: 28px;
-    }
-
-    .field {
-      margin-bottom: 20px;
-    }
+    .field { margin-bottom: 18px; }
 
     .field label {
       display: block;
       font-size: 13px;
-      font-weight: 500;
-      color: #555;
-      margin-bottom: 6px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
     }
 
-    .field label .required {
-      color: #e74c3c;
-      margin-left: 2px;
-    }
+    .field label .required { color: var(--danger); margin-left: 3px; }
+    .field label .optional { color: var(--text-faint); font-weight: 400; margin-left: 4px; font-size: 12px; }
 
+    /* ===== 输入框：新拟态"按进去" ===== */
     .field input,
     .field textarea {
       width: 100%;
-      padding: 12px 14px;
-      border: 1.5px solid #e0e0e0;
-      border-radius: 10px;
-      font-size: 15px;
-      color: #333;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      padding: 15px 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px; /* ≥16px 防止 iOS 聚焦时自动放大 */
+      color: var(--text);
+      background: var(--surface);
       outline: none;
-      background: #fafafa;
-    }
-
-    .field input:focus,
-    .field textarea:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.12);
-      background: #fff;
+      line-height: 1.5;
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+      transition: box-shadow 0.2s ease;
     }
 
     .field input::placeholder,
-    .field textarea::placeholder {
-      color: #aaa;
+    .field textarea::placeholder { color: var(--text-faint); }
+
+    .field input:focus,
+    .field textarea:focus {
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light),
+        0 0 0 2px rgba(108,92,231,0.35);
     }
 
     .field textarea {
-      min-height: 110px;
-      resize: vertical;
-      line-height: 1.6;
+      min-height: 104px;
+      resize: none;
     }
 
-    /* 图片上传区 */
+    /* ===== 图片上传区：同样按进去的风格 ===== */
     .upload-area {
-      border: 1.5px dashed #d0d0d0;
-      border-radius: 10px;
-      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      padding: 18px;
       text-align: center;
       cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      background: #fafafa;
+      background: var(--surface);
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
       position: relative;
+      transition: box-shadow 0.2s ease;
     }
 
-    .upload-area:hover {
-      border-color: #667eea;
-      background: #f5f3ff;
-    }
-
-    .upload-area.has-image {
-      padding: 8px;
+    .upload-area:active {
+      box-shadow:
+        inset 6px 6px 10px var(--shadow-dark),
+        inset -6px -6px 10px var(--shadow-light);
     }
 
     .upload-area input[type="file"] {
@@ -130,138 +162,162 @@
       background: transparent;
     }
 
-    .upload-area input[type="file"]:focus {
-      border: none;
-      box-shadow: none;
-    }
-
     .upload-icon {
-      font-size: 28px;
-      margin-bottom: 6px;
+      font-size: 30px;
+      margin-bottom: 8px;
+      /* 图标也做出一点点浮雕感 */
+      filter: drop-shadow(2px 2px 2px var(--shadow-dark)) drop-shadow(-1px -1px 1px var(--shadow-light));
     }
 
-    .upload-text {
-      font-size: 13px;
-      color: #999;
-    }
+    .upload-text { font-size: 13px; color: var(--text-soft); }
 
     .upload-preview {
       max-width: 100%;
-      max-height: 160px;
-      border-radius: 8px;
+      max-height: 180px;
+      border-radius: 12px;
       display: none;
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
     }
 
-    .upload-preview.show {
-      display: block;
-      margin: 0 auto;
-    }
+    .upload-preview.show { display: block; margin: 0 auto; }
 
     .upload-remove {
       position: absolute;
-      top: 6px;
-      right: 6px;
-      background: rgba(0,0,0,0.5);
-      color: #fff;
+      top: 8px;
+      right: 8px;
+      background: var(--surface);
+      color: var(--text-soft);
       border: none;
       border-radius: 50%;
-      width: 26px;
-      height: 26px;
-      font-size: 14px;
+      width: 30px;
+      height: 30px;
+      font-size: 15px;
       cursor: pointer;
       display: none;
       align-items: center;
       justify-content: center;
+      box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+    }
+    .upload-remove:active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
     }
 
+    .upload-area.has-image { padding: 10px; }
     .upload-area.has-image .upload-remove { display: flex; }
     .upload-area.has-image .upload-icon,
     .upload-area.has-image .upload-text { display: none; }
 
+    /* ===== 提交按钮：凸出 + 主题色 ===== */
     .btn-submit {
       width: 100%;
+      min-height: 52px;
+      margin-top: 4px;
       padding: 14px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #fff;
       border: none;
-      border-radius: 10px;
+      border-radius: 16px;
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 700;
+      letter-spacing: 1px;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
+      background: linear-gradient(145deg, #7b6cf0, var(--accent-strong));
+      box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+      transition: box-shadow 0.12s ease, transform 0.12s ease;
     }
 
-    .btn-submit:hover { opacity: 0.9; }
-    .btn-submit:active { transform: scale(0.98); }
-    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-submit:active {
+      transform: scale(0.985);
+      box-shadow: inset 5px 5px 10px rgba(0,0,0,0.18), inset -5px -5px 10px rgba(255,255,255,0.18);
+    }
 
-    /* 成功提示 */
+    .btn-submit:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+    }
+
+    /* ===== 成功弹层 ===== */
     .success-overlay {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.4);
+      background: rgba(232,235,243,0.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       align-items: center;
       justify-content: center;
       z-index: 100;
+      padding: 24px;
     }
-
     .success-overlay.show { display: flex; }
 
     .success-box {
-      background: #fff;
-      border-radius: 20px;
-      padding: 40px 32px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 38px 30px;
       text-align: center;
       max-width: 320px;
-      width: 90%;
-      animation: pop 0.3s ease;
+      width: 100%;
+      box-shadow: 14px 14px 28px var(--shadow-dark), -14px -14px 28px var(--shadow-light);
+      animation: pop 0.32s cubic-bezier(0.18, 0.89, 0.32, 1.28);
     }
 
     @keyframes pop {
-      from { transform: scale(0.8); opacity: 0; }
+      from { transform: scale(0.82); opacity: 0; }
       to { transform: scale(1); opacity: 1; }
     }
 
     .success-box .icon {
-      font-size: 52px;
-      margin-bottom: 16px;
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      background: var(--surface);
+      box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
     }
 
-    .success-box h2 {
-      font-size: 20px;
-      color: #333;
-      margin-bottom: 8px;
-    }
-
-    .success-box p {
-      font-size: 14px;
-      color: #888;
-      margin-bottom: 24px;
-    }
+    .success-box h2 { font-size: 19px; color: var(--text); margin-bottom: 8px; }
+    .success-box p { font-size: 14px; color: var(--text-soft); margin-bottom: 22px; line-height: 1.6; }
 
     .success-box button {
-      padding: 10px 32px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 13px 36px;
       color: #fff;
       border: none;
-      border-radius: 8px;
+      border-radius: 14px;
       font-size: 15px;
+      font-weight: 600;
       cursor: pointer;
+      background: linear-gradient(145deg, #7b6cf0, var(--accent-strong));
+      box-shadow: 5px 5px 12px var(--shadow-dark), -5px -5px 12px var(--shadow-light);
+    }
+    .success-box button:active {
+      box-shadow: inset 4px 4px 8px rgba(0,0,0,0.18), inset -4px -4px 8px rgba(255,255,255,0.18);
     }
 
     .error-msg {
-      color: #e74c3c;
+      color: var(--danger);
       font-size: 12px;
-      margin-top: 4px;
+      margin-top: 6px;
       display: none;
+    }
+
+    /* 超小屏微调 */
+    @media (max-width: 360px) {
+      .card { padding: 22px 16px; border-radius: 18px; }
+      .card-header .badge { width: 50px; height: 50px; font-size: 23px; }
+      .card-header h1 { font-size: 19px; }
     }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="card-header">
-      <h1>📮 留言板</h1>
+      <div class="badge">📮</div>
+      <h1>留言板</h1>
       <p>写下你想说的话，我会转达给主人</p>
     </div>
     <div class="card-body">
@@ -273,18 +329,18 @@
         </div>
 
         <div class="field">
-          <label>留言内容 <span style="color:#bbb;font-weight:400">(选填，或与图片二选一)</span></label>
+          <label>留言内容 <span class="optional">选填，或与图片二选一</span></label>
           <textarea id="content" placeholder="写下你想说的话...（也可只发图片）" maxlength="500"></textarea>
           <div class="error-msg" id="contentErr">请填写内容或添加图片</div>
         </div>
 
         <div class="field">
-          <label>联系方式 <span style="color:#bbb;font-weight:400">(选填)</span></label>
+          <label>联系方式 <span class="optional">选填</span></label>
           <input type="text" id="contact" placeholder="手机号、微信号等" maxlength="50">
         </div>
 
         <div class="field">
-          <label>添加图片 <span style="color:#bbb;font-weight:400">(选填)</span></label>
+          <label>添加图片 <span class="optional">选填</span></label>
           <div class="upload-area" id="uploadArea">
             <input type="file" id="imageInput" accept="image/*" capture="environment">
             <div class="upload-icon">📷</div>
