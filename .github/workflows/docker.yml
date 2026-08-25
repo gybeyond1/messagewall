@@ -33,17 +33,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Export image and upload to Release
+      - name: Export image tar
         run: |
           docker pull gybeyond/messagewall:latest
           docker save gybeyond/messagewall:latest -o messagewall-latest.tar
           ls -lh messagewall-latest.tar
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v2.2.3
-          files: messagewall-latest.tar
-          overwrite_files: true
+      - name: Upload to Release v1.0.0 (always overwrite)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 确保 v1.0.0 发布存在（首次若被删则重建，标签已存在则直接复用）
+          gh release view v1.0.0 >/dev/null 2>&1 || gh release create v1.0.0 --title "messagewall" --notes "自动构建的最新镜像。每次推送到 main 都会覆盖此处的 messagewall-latest.tar，不另发新版本号。"
+          # 覆盖上传同名资产，并防 GitHub 偶发 503 重试
+          for i in 1 2 3 4 5 6 7 8; do
+            if gh release upload v1.0.0 messagewall-latest.tar --clobber; then
+              echo "upload ok (attempt $i)"
+              break
+            fi
+            echo "upload 第 $i 次失败，25s 后重试..."
+            sleep 25
+          done
