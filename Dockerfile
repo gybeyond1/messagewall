@@ -16,6 +16,7 @@ RUN curl -fsSL https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz -o ffmpeg.tar.xz \
     && ./configure \
         --prefix=/opt/ffmpeg \
         --disable-everything \
+        --enable-version3 \
         --enable-libopencore-amrnb \
         --enable-decoder=opus \
         --enable-encoder=libopencore_amrnb \
