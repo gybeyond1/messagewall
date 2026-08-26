@@ -68,16 +68,30 @@ async function sendWebhook(title, content, imageDataUri, voiceDataUri) {
 function convertToAmr(inputPath) {
   return new Promise((resolve, reject) => {
     const outputPath = inputPath + '.amr';
-    const tryFfmpeg = (args) => new Promise((res, rej) => {
-      execFile('ffmpeg', ['-y', '-i', inputPath, ...args, outputPath], (err) => {
-        if (err) rej(err); else res(outputPath);
+    const attempts = [
+      ['-ar', '8000', '-ac', '1', '-ab', '12.2k', '-c:a', 'libopencore_amrnb'],
+      ['-ar', '8000', '-ac', '1', '-c:a', 'libopencore_amrnb'],
+      ['-ar', '8000', '-ac', '1', '-ab', '12.2k'],
+      ['-ar', '8000', '-ac', '1'],
+    ];
+    let idx = 0;
+    function tryNext() {
+      if (idx >= attempts.length) {
+        reject(new Error('所有 AMR 转码尝试均失败'));
+        return;
+      }
+      const args = ['-y', '-i', inputPath, ...attempts[idx], outputPath];
+      idx++;
+      execFile('ffmpeg', args, (err, stdout, stderr) => {
+        if (err) {
+          console.error('ffmpeg 转码尝试失败:', err.message, stderr ? stderr.slice(-300) : '');
+          tryNext();
+        } else {
+          resolve(outputPath);
+        }
       });
-    });
-    tryFfmpeg(['-ar', '8000', '-ac', '1', '-ab', '12.2k', '-c:a', 'libopencore_amrnb'])
-      .then(resolve)
-      .catch(() => tryFfmpeg(['-ar', '8000', '-ac', '1']))
-      .then(resolve)
-      .catch(reject);
+    }
+    tryNext();
   });
 }
 
@@ -94,7 +108,7 @@ async function uploadVoiceMedia(accessToken, amrPath) {
   return data.media_id;
 }
 
-async function sendWeChatWork(title, content, imageDataUri, imagePath, voiceAmrPath) {
+async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath, voiceAmrPath) {
   const corpId = getSetting('wx_corpid') || '';
   const agentId = getSetting('wx_agentid') || '';
   const secret = getSetting('wx_secret') || '';
@@ -117,39 +131,48 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voiceAmrP
     return;
   }
 
-  if (voiceAmrPath) {
+  if (voicePath) {
+    let noticeText;
+    if (content && content.trim()) {
+      noticeText = `🆕你有一条新留言\n👤用户：${title}\n📝留言：${content}`;
+    } else {
+      noticeText = `🆕你有一条新语音留言\n👤用户：${title}`;
+    }
     try {
-      const mediaId = await uploadVoiceMedia(accessToken, voiceAmrPath);
-      const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+      await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           touser: userIds,
-          msgtype: 'voice',
+          msgtype: 'text',
           agentid: agentId,
-          voice: { media_id: mediaId }
+          text: { content: noticeText }
         })
       });
-      const d = await resp.json();
-      if (d.errcode) console.error('企业微信发送 voice 失败:', d.errmsg);
     } catch (e) {
-      console.error('企业微信发送 voice 失败:', e.message);
+      console.error('企业微信发送语音通知失败:', e.message);
     }
-    if (content && content.trim()) {
+
+    if (voiceAmrPath) {
       try {
-        await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+        const mediaId = await uploadVoiceMedia(accessToken, voiceAmrPath);
+        const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             touser: userIds,
-            msgtype: 'text',
+            msgtype: 'voice',
             agentid: agentId,
-            text: { content: `👨🏻用户：${title}\n📝留言：${content}` }
+            voice: { media_id: mediaId }
           })
         });
+        const d = await resp.json();
+        if (d.errcode) console.error('企业微信发送 voice 失败:', d.errmsg);
       } catch (e) {
-        console.error('企业微信发送语音配套文字失败:', e.message);
+        console.error('企业微信发送 voice 失败:', e.message);
       }
+    } else {
+      console.error('语音转 AMR 失败，仅发送了文本通知（请检查 ffmpeg 日志）');
     }
     return;
   }
@@ -299,7 +322,7 @@ app.post('/api/message', (req, res) => {
     const title = contact ? `${name.trim()}（${contact}）` : name.trim();
     await Promise.all([
       sendWebhook(title, textContent, imageDataUri, voiceDataUri),
-      sendWeChatWork(title, textContent, imageDataUri, imagePath, voiceAmrPath)
+      sendWeChatWork(title, textContent, imageDataUri, imagePath, voicePath, voiceAmrPath)
     ]);
 
     res.json({ id: info.lastInsertRowid, success: true });
@@ -329,9 +352,9 @@ app.delete('/api/message/:id', (req, res) => {
     if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
   }
   if (msg?.voice_path) {
-    const voicePath = path.join(__dirname, 'uploads', msg.voice_path);
-    if (fs.existsSync(voicePath)) fs.unlinkSync(voicePath);
-    if (fs.existsSync(voicePath + '.amr')) fs.unlinkSync(voicePath + '.amr');
+    const vp = path.join(__dirname, 'uploads', msg.voice_path);
+    if (fs.existsSync(vp)) fs.unlinkSync(vp);
+    if (fs.existsSync(vp + '.amr')) fs.unlinkSync(vp + '.amr');
   }
   db.prepare('DELETE FROM messages WHERE id = ?').run(id);
   res.json({ success: true });
@@ -345,9 +368,9 @@ app.delete('/api/messages', (req, res) => {
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
     }
     if (m?.voice_path) {
-      const voicePath = path.join(__dirname, 'uploads', m.voice_path);
-      if (fs.existsSync(voicePath)) fs.unlinkSync(voicePath);
-      if (fs.existsSync(voicePath + '.amr')) fs.unlinkSync(voicePath + '.amr');
+      const vp = path.join(__dirname, 'uploads', m.voice_path);
+      if (fs.existsSync(vp)) fs.unlinkSync(vp);
+      if (fs.existsSync(vp + '.amr')) fs.unlinkSync(vp + '.amr');
     }
   });
   db.prepare('DELETE FROM messages').run();
