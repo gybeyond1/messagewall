@@ -11,9 +11,11 @@ const PORT = process.env.PORT || 3000;
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'messages.db');
 
+// 确保数据目录存在
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
+// 初始化数据库
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -31,14 +33,17 @@ db.exec(`
     value TEXT NOT NULL
   );
 `);
+// 兼容旧库：补 voice_path 列（已存在则忽略）
 try { db.exec(`ALTER TABLE messages ADD COLUMN voice_path TEXT DEFAULT ''`); } catch (_) {}
 
+// 初始化管理员密码（首次启动且数据库无记录时写入默认密码）
 const passwordHash = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password') || null;
 if (!passwordHash) {
   const salt = bcrypt.genSaltSync(10);
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, salt));
 }
 
+// ============ 通知发送 ============
 function getSetting(key) {
   return db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value;
 }
@@ -65,9 +70,11 @@ async function sendWebhook(title, content, imageDataUri, voiceDataUri) {
   }
 }
 
+// ffmpeg 转 AMR（企业微信语音要求：8kHz 单声道 AMR-NB）
 function convertToAmr(inputPath) {
   return new Promise((resolve, reject) => {
     const outputPath = inputPath + '.amr';
+    // 多种编码器配置依次尝试（alpine ffmpeg 可能只有部分可用）
     const attempts = [
       ['-ar', '8000', '-ac', '1', '-ab', '12.2k', '-c:a', 'libopencore_amrnb'],
       ['-ar', '8000', '-ac', '1', '-c:a', 'libopencore_amrnb'],
@@ -95,6 +102,7 @@ function convertToAmr(inputPath) {
   });
 }
 
+// 上传语音临时素材，返回 media_id
 async function uploadVoiceMedia(accessToken, amrPath) {
   const form = new FormData();
   const buf = fs.readFileSync(amrPath);
@@ -117,6 +125,7 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
   const msgFormat = getSetting('wx_message_format') || '[留言板]\n{title}\n\n{content}';
   if (!corpId || !agentId || !secret || !userIds) return;
 
+  // 获取 access_token
   let accessToken;
   try {
     const tokenResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${corpId}&corpsecret=${secret}`);
@@ -131,7 +140,9 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
     return;
   }
 
+  // ===== 有语音文件 → 先发文本通知，再发语音条（企业微信语音消息不能带文字，必须分开发） =====
   if (voicePath) {
+    // 1. 文本通知
     let noticeText;
     if (content && content.trim()) {
       noticeText = `🆕你有一条新留言\n👤用户：${title}\n📝留言：${content}`;
@@ -139,7 +150,7 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
       noticeText = `🆕你有一条新语音留言\n👤用户：${title}`;
     }
     try {
-      await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+      const textResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -149,10 +160,16 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
           text: { content: noticeText }
         })
       });
+      const textData = await textResp.json();
+      if (textData.errcode) console.error('企业微信发送语音通知失败:', textData.errmsg);
     } catch (e) {
       console.error('企业微信发送语音通知失败:', e.message);
     }
 
+    // 等文本通知送达后再发语音条，确保企业微信里文本在前、语音在后
+    await new Promise(r => setTimeout(r, 800));
+
+    // 2. 语音条（转码成功才发）
     if (voiceAmrPath) {
       try {
         const mediaId = await uploadVoiceMedia(accessToken, voiceAmrPath);
@@ -177,6 +194,7 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
     return;
   }
 
+  // 带图且配置了图片公网地址 → 发送 news 图文消息（picurl 走外链，不受 2MB 限制）
   if (imagePath && picBase) {
     const imgUrl = picBase.replace(/\/+$/, '') + '/uploads/' + imagePath;
     const desc = (content && content.trim()) ? `📝留言：${content}` : '（仅图片留言）';
@@ -207,6 +225,7 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
     }
   }
 
+  // 无图，或未配置公网地址 → 发送文本消息
   const messageContent = msgFormat
     .replace(/{title}/g, title)
     .replace(/{content}/g, content || '');
@@ -232,18 +251,21 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
   }
 }
 
+// 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// 创建 uploads 目录
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+// ============ 文件上传配置 ============
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_VOICE_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2'];
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const MAX_VOICE_SIZE = 10 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_VOICE_SIZE = 10 * 1024 * 1024; // 10MB（转 AMR 后会小很多）
 const upload = multer({
   dest: uploadsDir,
   limits: { fileSize: Math.max(MAX_IMAGE_SIZE, MAX_VOICE_SIZE) },
@@ -260,6 +282,7 @@ const upload = multer({
   }
 });
 
+// ============ 前端路由 ============
 app.get('/message', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -268,6 +291,7 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// ============ API：提交留言 ============
 app.post('/api/message', (req, res) => {
   upload.fields([{ name: 'image', maxCount: 1 }, { name: 'voice', maxCount: 1 }])(req, res, async (err) => {
     if (err) {
@@ -279,13 +303,12 @@ app.post('/api/message', (req, res) => {
     const imageFile = req.files?.image?.[0] || null;
     const voiceFile = req.files?.voice?.[0] || null;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: '姓名不能为空' });
-    }
+    const displayName = (name && name.trim()) ? name.trim() : '匿名访客';
     if (!textContent.trim() && !imageFile && !voiceFile) {
       return res.status(400).json({ error: '留言内容、图片、语音至少填写一项' });
     }
 
+    // 保存图片（补扩展名），并读出 base64 用于 webhook
     let imagePath = '';
     let imageDataUri = '';
     if (imageFile) {
@@ -298,6 +321,7 @@ app.post('/api/message', (req, res) => {
       imageDataUri = `data:${imageFile.mimetype};base64,${buf.toString('base64')}`;
     }
 
+    // 保存语音（补扩展名），转 AMR 用于企业微信，原始格式 base64 用于 webhook
     let voicePath = '';
     let voiceDataUri = '';
     let voiceAmrPath = '';
@@ -307,19 +331,23 @@ app.post('/api/message', (req, res) => {
       const newName = voiceFile.filename + '.' + ext;
       fs.renameSync(voiceFile.path, path.join(uploadsDir, newName));
       voicePath = newName;
+      // webhook 用原始格式 base64（EchoLink 直接存和播放）
       const buf = fs.readFileSync(path.join(uploadsDir, newName));
       voiceDataUri = `data:${voiceFile.mimetype};base64,${buf.toString('base64')}`;
+      // 转 AMR 用于企业微信 voice 通道
       try {
         voiceAmrPath = await convertToAmr(path.join(uploadsDir, newName));
       } catch (e) {
         console.error('语音转 AMR 失败:', e.message);
+        // 转码失败则不发企业微信语音，但 webhook 仍发原始格式
       }
     }
 
     const stmt = db.prepare('INSERT INTO messages (name, content, contact, image_path, voice_path) VALUES (?, ?, ?, ?, ?)');
-    const info = stmt.run(name.trim(), textContent, contact || '', imagePath, voicePath);
+    const info = stmt.run(displayName, textContent, contact || '', imagePath, voicePath);
 
-    const title = contact ? `${name.trim()}（${contact}）` : name.trim();
+    // 发送通知
+    const title = contact ? `${displayName}（${contact}）` : displayName;
     await Promise.all([
       sendWebhook(title, textContent, imageDataUri, voiceDataUri),
       sendWeChatWork(title, textContent, imageDataUri, imagePath, voicePath, voiceAmrPath)
@@ -329,6 +357,7 @@ app.post('/api/message', (req, res) => {
   });
 });
 
+// ============ API：管理员认证 ============
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   const stored = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password');
@@ -339,11 +368,13 @@ app.post('/api/admin/login', (req, res) => {
   }
 });
 
+// ============ API：获取所有留言 ============
 app.get('/api/messages', (req, res) => {
   const msgs = db.prepare('SELECT * FROM messages ORDER BY created_at DESC').all();
   res.json(msgs);
 });
 
+// ============ API：删除单条留言 ============
 app.delete('/api/message/:id', (req, res) => {
   const { id } = req.params;
   const msg = db.prepare('SELECT image_path, voice_path FROM messages WHERE id = ?').get(id);
@@ -352,14 +383,16 @@ app.delete('/api/message/:id', (req, res) => {
     if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
   }
   if (msg?.voice_path) {
-    const vp = path.join(__dirname, 'uploads', msg.voice_path);
-    if (fs.existsSync(vp)) fs.unlinkSync(vp);
-    if (fs.existsSync(vp + '.amr')) fs.unlinkSync(vp + '.amr');
+    const voicePath = path.join(__dirname, 'uploads', msg.voice_path);
+    if (fs.existsSync(voicePath)) fs.unlinkSync(voicePath);
+    // 同时删转码产物
+    if (fs.existsSync(voicePath + '.amr')) fs.unlinkSync(voicePath + '.amr');
   }
   db.prepare('DELETE FROM messages WHERE id = ?').run(id);
   res.json({ success: true });
 });
 
+// ============ API：清空所有留言 ============
 app.delete('/api/messages', (req, res) => {
   const msgs = db.prepare('SELECT image_path, voice_path FROM messages').all();
   msgs.forEach(m => {
@@ -368,15 +401,16 @@ app.delete('/api/messages', (req, res) => {
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
     }
     if (m?.voice_path) {
-      const vp = path.join(__dirname, 'uploads', m.voice_path);
-      if (fs.existsSync(vp)) fs.unlinkSync(vp);
-      if (fs.existsSync(vp + '.amr')) fs.unlinkSync(vp + '.amr');
+      const voicePath = path.join(__dirname, 'uploads', m.voice_path);
+      if (fs.existsSync(voicePath)) fs.unlinkSync(voicePath);
+      if (fs.existsSync(voicePath + '.amr')) fs.unlinkSync(voicePath + '.amr');
     }
   });
   db.prepare('DELETE FROM messages').run();
   res.json({ success: true });
 });
 
+// ============ API：更新配置 ============
 app.put('/api/settings', (req, res) => {
   const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase } = req.body;
   const save = (key, value) => {
@@ -397,6 +431,7 @@ app.put('/api/settings', (req, res) => {
   res.json({ success: true });
 });
 
+// ============ API：读取配置 ============
 app.get('/api/settings', (req, res) => {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const settings = {};
@@ -414,6 +449,7 @@ app.get('/api/settings', (req, res) => {
   });
 });
 
+// ============ API：测试 Webhook ============
 app.post('/api/webhook/test', async (req, res) => {
   const { url, title, content } = req.body;
   if (!url) return res.status(400).json({ error: 'URL 不能为空' });
@@ -431,6 +467,7 @@ app.post('/api/webhook/test', async (req, res) => {
   }
 });
 
+// ============ API：测试企业微信 ============
 app.post('/api/wx/test', async (req, res) => {
   const { corpId, agentId, secret, userId } = req.body;
   if (!corpId || !secret || !userId) {
@@ -465,6 +502,7 @@ app.post('/api/wx/test', async (req, res) => {
   }
 });
 
+// ============ 启动 ============
 app.listen(PORT, () => {
   console.log(`留言板服务已启动 → http://localhost:${PORT}/message`);
   console.log(`管理后台 → http://localhost:${PORT}/admin`);
