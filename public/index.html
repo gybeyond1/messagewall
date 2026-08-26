@@ -32,12 +32,10 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      /* 适配刘海/灵动岛安全区 */
       padding: calc(20px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ===== 新拟态卡片：从背景"凸出" ===== */
     .card {
       background: var(--surface);
       border-radius: var(--radius);
@@ -94,14 +92,13 @@
     .field label .required { color: var(--danger); margin-left: 3px; }
     .field label .optional { color: var(--text-faint); font-weight: 400; margin-left: 4px; font-size: 12px; }
 
-    /* ===== 输入框：新拟态"按进去" ===== */
     .field input,
     .field textarea {
       width: 100%;
       padding: 15px 16px;
       border: none;
       border-radius: 14px;
-      font-size: 16px; /* ≥16px 防止 iOS 聚焦时自动放大 */
+      font-size: 16px;
       color: var(--text);
       background: var(--surface);
       outline: none;
@@ -128,7 +125,6 @@
       resize: none;
     }
 
-    /* ===== 图片上传区：同样按进去的风格 ===== */
     .upload-area {
       border: none;
       border-radius: 14px;
@@ -160,12 +156,14 @@
       box-shadow: none;
       padding: 0;
       background: transparent;
+      z-index: 2;
     }
+
+    .upload-icon, .upload-text { pointer-events: none; }
 
     .upload-icon {
       font-size: 30px;
       margin-bottom: 8px;
-      /* 图标也做出一点点浮雕感 */
       filter: drop-shadow(2px 2px 2px var(--shadow-dark)) drop-shadow(-1px -1px 1px var(--shadow-light));
     }
 
@@ -197,6 +195,7 @@
       align-items: center;
       justify-content: center;
       box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+      z-index: 3;
     }
     .upload-remove:active {
       box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
@@ -207,7 +206,74 @@
     .upload-area.has-image .upload-icon,
     .upload-area.has-image .upload-text { display: none; }
 
-    /* ===== 提交按钮：凸出 + 主题色 ===== */
+    .voice-area {
+      border: none;
+      border-radius: 14px;
+      padding: 14px;
+      text-align: center;
+      background: var(--surface);
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+      position: relative;
+    }
+
+    .voice-btn {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px;
+      color: var(--text);
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--surface);
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+      transition: box-shadow 0.12s ease, transform 0.12s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    .voice-btn:active, .voice-btn.recording {
+      transform: scale(0.98);
+      box-shadow: inset 4px 4px 10px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light);
+      color: var(--danger);
+    }
+    .voice-btn.recording {
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .voice-preview {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .voice-preview audio {
+      flex: 1;
+      height: 40px;
+      border-radius: 8px;
+    }
+    .voice-remove {
+      background: var(--surface);
+      color: var(--text-soft);
+      border: none;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      font-size: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+    }
+    .voice-remove:active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+    }
+
     .btn-submit {
       width: 100%;
       min-height: 52px;
@@ -236,7 +302,6 @@
       box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
     }
 
-    /* ===== 成功弹层 ===== */
     .success-overlay {
       display: none;
       position: fixed;
@@ -305,7 +370,6 @@
       display: none;
     }
 
-    /* 超小屏微调 */
     @media (max-width: 360px) {
       .card { padding: 22px 16px; border-radius: 18px; }
       .card-header .badge { width: 50px; height: 50px; font-size: 23px; }
@@ -329,9 +393,9 @@
         </div>
 
         <div class="field">
-          <label>留言内容 <span class="optional">选填，或与图片二选一</span></label>
-          <textarea id="content" placeholder="写下你想说的话...（也可只发图片）" maxlength="500"></textarea>
-          <div class="error-msg" id="contentErr">请填写内容或添加图片</div>
+          <label>留言内容 <span class="optional">选填 · 可只发图片/语音</span></label>
+          <textarea id="content" placeholder="写下你想说的话...（可留空，只发图片或语音）" maxlength="500"></textarea>
+          <div class="error-msg" id="contentErr">请填写内容、添加图片或录制语音（至少一项）</div>
         </div>
 
         <div class="field">
@@ -340,13 +404,24 @@
         </div>
 
         <div class="field">
-          <label>添加图片 <span class="optional">选填</span></label>
+          <label>添加图片 / 拍照 <span class="optional">选填 · 可只发图片</span></label>
           <div class="upload-area" id="uploadArea">
             <input type="file" id="imageInput" accept="image/*" capture="environment">
             <div class="upload-icon">📷</div>
             <div class="upload-text">点击拍照或选择图片</div>
             <img class="upload-preview" id="preview" alt="预览">
             <button type="button" class="upload-remove" id="removeBtn">✕</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>语音留言 <span class="optional">选填 · 可只发语音</span></label>
+          <div class="voice-area" id="voiceArea">
+            <button type="button" class="voice-btn" id="voiceBtn">🎤 按住说话</button>
+            <div class="voice-preview" id="voicePreview" style="display:none">
+              <audio controls id="voiceAudio"></audio>
+              <button type="button" class="voice-remove" id="voiceRemove">✕</button>
+            </div>
           </div>
         </div>
 
@@ -372,6 +447,16 @@
     const removeBtn = document.getElementById('removeBtn');
     let selectedFile = null;
 
+    const voiceBtn = document.getElementById('voiceBtn');
+    const voicePreview = document.getElementById('voicePreview');
+    const voiceAudio = document.getElementById('voiceAudio');
+    const voiceRemove = document.getElementById('voiceRemove');
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordedBlob = null;
+    let recordStartTime = 0;
+    let recordTimer = null;
+
     imageInput.addEventListener('change', function() {
       const file = this.files[0];
       if (!file) return;
@@ -394,6 +479,66 @@
       uploadArea.classList.remove('has-image');
     });
 
+    async function startRecording() {
+      if (mediaRecorder && mediaRecorder.state === 'recording') return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        let mime = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm';
+        if (!MediaRecorder.isTypeSupported(mime)) mime = '';
+        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          if (blob.size < 1000) { resetVoiceUI(); return; }
+          recordedBlob = blob;
+          voiceAudio.src = URL.createObjectURL(blob);
+          voiceBtn.style.display = 'none';
+          voicePreview.style.display = 'flex';
+        };
+        mediaRecorder.start();
+        recordStartTime = Date.now();
+        voiceBtn.classList.add('recording');
+        voiceBtn.textContent = '🎙 录音中... 松开发送';
+        recordTimer = setInterval(() => {
+          const sec = Math.floor((Date.now() - recordStartTime) / 1000);
+          voiceBtn.textContent = `🎙 录音中 ${sec}s... 松开发送`;
+          if (sec >= 60) stopRecording();
+        }, 500);
+      } catch (err) {
+        alert('无法访问麦克风：' + err.message);
+        resetVoiceUI();
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state === 'recording') { mediaRecorder.stop(); }
+      if (recordTimer) { clearInterval(recordTimer); recordTimer = null; }
+      voiceBtn.classList.remove('recording');
+      voiceBtn.textContent = '🎤 按住说话';
+    }
+
+    function resetVoiceUI() {
+      recordedBlob = null;
+      audioChunks = [];
+      if (voiceAudio.src) URL.revokeObjectURL(voiceAudio.src);
+      voiceAudio.src = '';
+      voiceBtn.style.display = '';
+      voicePreview.style.display = 'none';
+      voiceBtn.classList.remove('recording');
+      voiceBtn.textContent = '🎤 按住说话';
+    }
+
+    voiceBtn.addEventListener('mousedown', e => { e.preventDefault(); startRecording(); });
+    voiceBtn.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); });
+    voiceBtn.addEventListener('mouseup', () => stopRecording());
+    voiceBtn.addEventListener('touchend', e => { e.preventDefault(); stopRecording(); });
+    voiceBtn.addEventListener('mouseleave', () => { if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording(); });
+    voiceBtn.addEventListener('touchcancel', () => stopRecording());
+    voiceRemove.addEventListener('click', () => resetVoiceUI());
+
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
       const name = document.getElementById('name').value.trim();
@@ -408,7 +553,7 @@
         document.getElementById('nameErr').style.display = 'block';
         valid = false;
       }
-      if (!content && !selectedFile) {
+      if (!content && !selectedFile && !recordedBlob) {
         document.getElementById('contentErr').style.display = 'block';
         valid = false;
       }
@@ -423,6 +568,7 @@
       formData.append('content', content);
       formData.append('contact', contact);
       if (selectedFile) formData.append('image', selectedFile);
+      if (recordedBlob) formData.append('voice', recordedBlob, 'recording.' + (recordedBlob.type.includes('mp4') ? 'm4a' : 'webm'));
 
       try {
         const res = await fetch('/api/message', { method: 'POST', body: formData });
