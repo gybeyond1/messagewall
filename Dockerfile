@@ -5,7 +5,7 @@
 FROM node:22-bookworm-slim AS ffmpeg-build
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    autoconf automake libtool pkg-config make gcc g++ yasm nasm curl ca-certificates \
+    autoconf automake libtool pkg-config make gcc g++ yasm nasm curl ca-certificates xz-utils \
     libopencore-amrnb-dev \
     && rm -rf /var/lib/apt/lists/*
 
