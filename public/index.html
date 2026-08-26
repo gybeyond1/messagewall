@@ -387,9 +387,8 @@
     <div class="card-body">
       <form id="msgForm">
         <div class="field">
-          <label>怎么称呼您？<span class="required">*</span></label>
-          <input type="text" id="name" placeholder="请输入您的称呼" maxlength="30" required>
-          <div class="error-msg" id="nameErr">请输入您的称呼</div>
+          <label>怎么称呼您？<span class="optional">选填</span></label>
+          <input type="text" id="name" placeholder="请输入您的称呼（留空则匿名）" maxlength="30">
         </div>
 
         <div class="field">
@@ -406,7 +405,7 @@
         <div class="field">
           <label>添加图片 / 拍照 <span class="optional">选填 · 可只发图片</span></label>
           <div class="upload-area" id="uploadArea">
-            <input type="file" id="imageInput" accept="image/*" capture="environment">
+            <input type="file" id="imageInput" accept="image/*">
             <div class="upload-icon">📷</div>
             <div class="upload-text">点击拍照或选择图片</div>
             <img class="upload-preview" id="preview" alt="预览">
@@ -492,7 +491,10 @@
         mediaRecorder.onstop = () => {
           stream.getTracks().forEach(t => t.stop());
           const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-          if (blob.size < 1000) { resetVoiceUI(); return; }
+          if (blob.size < 1000) {
+            resetVoiceUI();
+            return;
+          }
           recordedBlob = blob;
           voiceAudio.src = URL.createObjectURL(blob);
           voiceBtn.style.display = 'none';
@@ -514,7 +516,9 @@
     }
 
     function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state === 'recording') { mediaRecorder.stop(); }
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
       if (recordTimer) { clearInterval(recordTimer); recordTimer = null; }
       voiceBtn.classList.remove('recording');
       voiceBtn.textContent = '🎤 按住说话';
@@ -537,6 +541,7 @@
     voiceBtn.addEventListener('touchend', e => { e.preventDefault(); stopRecording(); });
     voiceBtn.addEventListener('mouseleave', () => { if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording(); });
     voiceBtn.addEventListener('touchcancel', () => stopRecording());
+
     voiceRemove.addEventListener('click', () => resetVoiceUI());
 
     form.addEventListener('submit', async function(e) {
@@ -546,13 +551,8 @@
       const contact = document.getElementById('contact').value.trim();
 
       let valid = true;
-      document.getElementById('nameErr').style.display = 'none';
       document.getElementById('contentErr').style.display = 'none';
 
-      if (!name) {
-        document.getElementById('nameErr').style.display = 'block';
-        valid = false;
-      }
       if (!content && !selectedFile && !recordedBlob) {
         document.getElementById('contentErr').style.display = 'block';
         valid = false;
