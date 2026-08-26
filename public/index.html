@@ -32,10 +32,12 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      /* 适配刘海/灵动岛安全区 */
       padding: calc(20px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
       -webkit-font-smoothing: antialiased;
     }
 
+    /* ===== 新拟态卡片：从背景"凸出" ===== */
     .card {
       background: var(--surface);
       border-radius: var(--radius);
@@ -92,13 +94,14 @@
     .field label .required { color: var(--danger); margin-left: 3px; }
     .field label .optional { color: var(--text-faint); font-weight: 400; margin-left: 4px; font-size: 12px; }
 
+    /* ===== 输入框：新拟态"按进去" ===== */
     .field input,
     .field textarea {
       width: 100%;
       padding: 15px 16px;
       border: none;
       border-radius: 14px;
-      font-size: 16px;
+      font-size: 16px; /* ≥16px 防止 iOS 聚焦时自动放大 */
       color: var(--text);
       background: var(--surface);
       outline: none;
@@ -125,12 +128,11 @@
       resize: none;
     }
 
+    /* ===== 图片上传区：拍照 + 相册 两个按钮 ===== */
     .upload-area {
       border: none;
       border-radius: 14px;
-      padding: 18px;
-      text-align: center;
-      cursor: pointer;
+      padding: 14px;
       background: var(--surface);
       box-shadow:
         inset 4px 4px 8px var(--shadow-dark),
@@ -139,31 +141,34 @@
       transition: box-shadow 0.2s ease;
     }
 
-    .upload-area:active {
-      box-shadow:
-        inset 6px 6px 10px var(--shadow-dark),
-        inset -6px -6px 10px var(--shadow-light);
+    .upload-btns {
+      display: flex;
+      gap: 12px;
     }
 
-    .upload-area input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
+    .upload-btn {
+      flex: 1;
       border: none;
-      box-shadow: none;
-      padding: 0;
-      background: transparent;
-      z-index: 2;
+      border-radius: 12px;
+      padding: 14px 8px;
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+      transition: box-shadow 0.12s ease, transform 0.12s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
     }
 
-    .upload-icon, .upload-text { pointer-events: none; }
+    .upload-btn:active {
+      transform: scale(0.98);
+      box-shadow: inset 4px 4px 10px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light);
+    }
 
     .upload-icon {
-      font-size: 30px;
-      margin-bottom: 8px;
+      font-size: 28px;
       filter: drop-shadow(2px 2px 2px var(--shadow-dark)) drop-shadow(-1px -1px 1px var(--shadow-light));
     }
 
@@ -203,9 +208,9 @@
 
     .upload-area.has-image { padding: 10px; }
     .upload-area.has-image .upload-remove { display: flex; }
-    .upload-area.has-image .upload-icon,
-    .upload-area.has-image .upload-text { display: none; }
+    .upload-area.has-image .upload-btns { display: none; }
 
+    /* ===== 语音录制区 ===== */
     .voice-area {
       border: none;
       border-radius: 14px;
@@ -274,6 +279,7 @@
       box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
     }
 
+    /* ===== 提交按钮：凸出 + 主题色 ===== */
     .btn-submit {
       width: 100%;
       min-height: 52px;
@@ -302,6 +308,7 @@
       box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
     }
 
+    /* ===== 成功弹层 ===== */
     .success-overlay {
       display: none;
       position: fixed;
@@ -370,6 +377,7 @@
       display: none;
     }
 
+    /* 超小屏微调 */
     @media (max-width: 360px) {
       .card { padding: 22px 16px; border-radius: 18px; }
       .card-header .badge { width: 50px; height: 50px; font-size: 23px; }
@@ -405,9 +413,18 @@
         <div class="field">
           <label>添加图片 / 拍照 <span class="optional">选填 · 可只发图片</span></label>
           <div class="upload-area" id="uploadArea">
-            <input type="file" id="imageInput" accept="image/*">
-            <div class="upload-icon">📷</div>
-            <div class="upload-text">点击拍照或选择图片</div>
+            <div class="upload-btns" id="uploadBtns">
+              <button type="button" class="upload-btn" id="btnCamera">
+                <div class="upload-icon">📷</div>
+                <div class="upload-text">拍照</div>
+              </button>
+              <button type="button" class="upload-btn" id="btnGallery">
+                <div class="upload-icon">🖼️</div>
+                <div class="upload-text">从相册选择</div>
+              </button>
+            </div>
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+            <input type="file" id="galleryInput" accept="image/*" style="display:none">
             <img class="upload-preview" id="preview" alt="预览">
             <button type="button" class="upload-remove" id="removeBtn">✕</button>
           </div>
@@ -440,12 +457,14 @@
 
   <script>
     const form = document.getElementById('msgForm');
-    const imageInput = document.getElementById('imageInput');
+    const cameraInput = document.getElementById('cameraInput');
+    const galleryInput = document.getElementById('galleryInput');
     const uploadArea = document.getElementById('uploadArea');
     const preview = document.getElementById('preview');
     const removeBtn = document.getElementById('removeBtn');
     let selectedFile = null;
 
+    // ===== 语音录制 =====
     const voiceBtn = document.getElementById('voiceBtn');
     const voicePreview = document.getElementById('voicePreview');
     const voiceAudio = document.getElementById('voiceAudio');
@@ -456,8 +475,11 @@
     let recordStartTime = 0;
     let recordTimer = null;
 
-    imageInput.addEventListener('change', function() {
-      const file = this.files[0];
+    // 拍照 / 相册按钮
+    document.getElementById('btnCamera').addEventListener('click', () => cameraInput.click());
+    document.getElementById('btnGallery').addEventListener('click', () => galleryInput.click());
+
+    function handleImageSelected(file) {
       if (!file) return;
       selectedFile = file;
       const reader = new FileReader();
@@ -467,22 +489,32 @@
         uploadArea.classList.add('has-image');
       };
       reader.readAsDataURL(file);
+    }
+
+    cameraInput.addEventListener('change', function() {
+      handleImageSelected(this.files[0]);
+    });
+    galleryInput.addEventListener('change', function() {
+      handleImageSelected(this.files[0]);
     });
 
     removeBtn.addEventListener('click', function(e) {
       e.stopPropagation();
       selectedFile = null;
-      imageInput.value = '';
+      cameraInput.value = '';
+      galleryInput.value = '';
       preview.src = '';
       preview.classList.remove('show');
       uploadArea.classList.remove('has-image');
     });
 
+    // ===== 语音录制逻辑 =====
     async function startRecording() {
       if (mediaRecorder && mediaRecorder.state === 'recording') return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioChunks = [];
+        // 优先用 webm/opus，Safari 可能用 mp4
         let mime = 'audio/webm;codecs=opus';
         if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm';
         if (!MediaRecorder.isTypeSupported(mime)) mime = '';
@@ -491,7 +523,7 @@
         mediaRecorder.onstop = () => {
           stream.getTracks().forEach(t => t.stop());
           const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-          if (blob.size < 1000) {
+          if (blob.size < 1000) { // 小于 1KB 视为无效
             resetVoiceUI();
             return;
           }
@@ -507,7 +539,7 @@
         recordTimer = setInterval(() => {
           const sec = Math.floor((Date.now() - recordStartTime) / 1000);
           voiceBtn.textContent = `🎙 录音中 ${sec}s... 松开发送`;
-          if (sec >= 60) stopRecording();
+          if (sec >= 60) stopRecording(); // 最长 60 秒
         }, 500);
       } catch (err) {
         alert('无法访问麦克风：' + err.message);
@@ -535,6 +567,7 @@
       voiceBtn.textContent = '🎤 按住说话';
     }
 
+    // 按住录音（鼠标 + 触摸）
     voiceBtn.addEventListener('mousedown', e => { e.preventDefault(); startRecording(); });
     voiceBtn.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); });
     voiceBtn.addEventListener('mouseup', () => stopRecording());
