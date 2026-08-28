@@ -243,40 +243,133 @@
     .voice-btn:active, .voice-btn.recording {
       transform: scale(0.98);
       box-shadow: inset 4px 4px 10px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light);
-      color: var(--danger);
-    }
-    .voice-btn.recording {
-      animation: pulse 1.2s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
+      color: var(--accent);
     }
 
-    .voice-preview {
+    /* ===== 录音浮层 ===== */
+    .record-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(18,20,26,0.72);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .record-overlay.show { display: flex; }
+    .record-box {
+      background: var(--surface);
+      border-radius: 26px;
+      padding: 30px 38px 24px;
+      text-align: center;
+      min-width: 180px;
+      box-shadow: 14px 14px 28px var(--shadow-dark), -14px -14px 28px var(--shadow-light);
+    }
+    .record-icon {
+      width: 76px; height: 76px;
+      margin: 0 auto 14px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px;
+      background: var(--surface);
+      box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+      transition: color 0.15s;
+    }
+    .record-icon.cancel { color: var(--danger); }
+    .record-tip {
+      font-size: 14px;
+      color: var(--text-soft);
+      font-weight: 500;
+    }
+    .record-tip.cancel { color: var(--danger); }
+    .record-duration {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===== 语音气泡预览 ===== */
+    .voice-bubble {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      padding: 12px 16px 12px 12px;
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: box-shadow 0.12s;
     }
-    .voice-preview audio {
+    .voice-bubble:active {
+      box-shadow: inset 3px 3px 8px var(--shadow-dark), inset -3px -3px 8px var(--shadow-light);
+    }
+    .voice-play-icon {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface);
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      flex-shrink: 0;
+      font-size: 0;
+    }
+    /* WiFi 信号三格图标 */
+    .voice-wifi {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 16px;
+    }
+    .voice-wifi i {
+      display: block;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+      opacity: 0.35;
+    }
+    .voice-wifi i:nth-child(1) { height: 6px; }
+    .voice-wifi i:nth-child(2) { height: 11px; }
+    .voice-wifi i:nth-child(3) { height: 16px; }
+    .voice-bubble.playing .voice-wifi i {
+      animation: wifiBlink 0.8s ease-in-out infinite;
+    }
+    .voice-bubble.playing .voice-wifi i:nth-child(2) { animation-delay: 0.15s; }
+    .voice-bubble.playing .voice-wifi i:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes wifiBlink {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
+    }
+    .voice-duration {
       flex: 1;
-      height: 40px;
-      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      text-align: left;
+      font-variant-numeric: tabular-nums;
     }
     .voice-remove {
-      background: var(--surface);
-      color: var(--text-soft);
-      border: none;
+      position: absolute;
+      top: -9px; right: -9px;
+      width: 26px; height: 26px;
       border-radius: 50%;
-      width: 30px;
-      height: 30px;
-      font-size: 15px;
+      background: var(--danger);
+      color: #fff;
+      border: 2px solid var(--surface);
+      font-size: 13px;
+      font-weight: 700;
       cursor: pointer;
-      flex-shrink: 0;
-      box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
-    }
-    .voice-remove:active {
-      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 2px 2px 6px var(--shadow-dark);
+      z-index: 5;
+      line-height: 1;
     }
 
     /* ===== 提交按钮：凸出 + 主题色 ===== */
@@ -433,9 +526,12 @@
         <div class="field">
           <label>语音留言 <span class="optional">选填 · 可只发语音</span></label>
           <div class="voice-area" id="voiceArea">
-            <button type="button" class="voice-btn" id="voiceBtn">🎤 按住说话</button>
-            <div class="voice-preview" id="voicePreview" style="display:none">
-              <audio controls id="voiceAudio"></audio>
+            <button type="button" class="voice-btn" id="voiceBtn">🎤 按住说话，上滑取消</button>
+            <div class="voice-bubble" id="voiceBubble" style="display:none">
+              <div class="voice-play-icon">
+                <span class="voice-wifi"><i></i><i></i><i></i></span>
+              </div>
+              <span class="voice-duration" id="voiceDuration">0"</span>
               <button type="button" class="voice-remove" id="voiceRemove">✕</button>
             </div>
           </div>
@@ -455,6 +551,15 @@
     </div>
   </div>
 
+  <!-- 录音浮层 -->
+  <div class="record-overlay" id="recordOverlay">
+    <div class="record-box">
+      <div class="record-icon" id="recordIcon">🎙️</div>
+      <div class="record-duration" id="recordDuration">0"</div>
+      <div class="record-tip" id="recordTip">松开发送，上滑取消</div>
+    </div>
+  </div>
+
   <script>
     const form = document.getElementById('msgForm');
     const cameraInput = document.getElementById('cameraInput');
@@ -466,14 +571,22 @@
 
     // ===== 语音录制 =====
     const voiceBtn = document.getElementById('voiceBtn');
-    const voicePreview = document.getElementById('voicePreview');
-    const voiceAudio = document.getElementById('voiceAudio');
+    const voiceBubble = document.getElementById('voiceBubble');
+    const voiceDuration = document.getElementById('voiceDuration');
     const voiceRemove = document.getElementById('voiceRemove');
+    const recordOverlay = document.getElementById('recordOverlay');
+    const recordIcon = document.getElementById('recordIcon');
+    const recordTip = document.getElementById('recordTip');
+    const recordDurationEl = document.getElementById('recordDuration');
     let mediaRecorder = null;
     let audioChunks = [];
     let recordedBlob = null;
     let recordStartTime = 0;
     let recordTimer = null;
+    let startY = 0;
+    let isCancel = false;
+    let audioPlayer = null;
+    const CANCEL_THRESHOLD = 80; // 上滑超过 80px 取消
 
     // 拍照 / 相册按钮
     document.getElementById('btnCamera').addEventListener('click', () => cameraInput.click());
@@ -509,12 +622,11 @@
     });
 
     // ===== 语音录制逻辑 =====
-    async function startRecording() {
+    async function startRecording(clientY) {
       if (mediaRecorder && mediaRecorder.state === 'recording') return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioChunks = [];
-        // 优先用 webm/opus，Safari 可能用 mp4
         let mime = 'audio/webm;codecs=opus';
         if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm';
         if (!MediaRecorder.isTypeSupported(mime)) mime = '';
@@ -522,60 +634,140 @@
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
         mediaRecorder.onstop = () => {
           stream.getTracks().forEach(t => t.stop());
+          hideRecordOverlay();
+          if (isCancel) { resetVoiceUI(); return; }
           const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-          if (blob.size < 1000) { // 小于 1KB 视为无效
-            resetVoiceUI();
-            return;
-          }
+          if (blob.size < 1000) { resetVoiceUI(); return; }
           recordedBlob = blob;
-          voiceAudio.src = URL.createObjectURL(blob);
+          const sec = Math.max(1, Math.floor((Date.now() - recordStartTime) / 1000));
+          voiceDuration.textContent = sec + '"';
           voiceBtn.style.display = 'none';
-          voicePreview.style.display = 'flex';
+          voiceBubble.style.display = 'flex';
         };
         mediaRecorder.start();
         recordStartTime = Date.now();
+        startY = clientY;
+        isCancel = false;
         voiceBtn.classList.add('recording');
-        voiceBtn.textContent = '🎙 录音中... 松开发送';
+        showRecordOverlay();
         recordTimer = setInterval(() => {
           const sec = Math.floor((Date.now() - recordStartTime) / 1000);
-          voiceBtn.textContent = `🎙 录音中 ${sec}s... 松开发送`;
-          if (sec >= 60) stopRecording(); // 最长 60 秒
-        }, 500);
+          recordDurationEl.textContent = sec + '"';
+          if (sec >= 60) finishRecording(false); // 最长 60 秒
+        }, 200);
       } catch (err) {
         alert('无法访问麦克风：' + err.message);
         resetVoiceUI();
       }
     }
 
-    function stopRecording() {
+    function updateCancelState(clientY) {
+      if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+      const dy = startY - clientY; // 上滑为正
+      isCancel = dy > CANCEL_THRESHOLD;
+      if (isCancel) {
+        recordIcon.classList.add('cancel');
+        recordIcon.textContent = '✕';
+        recordTip.classList.add('cancel');
+        recordTip.textContent = '松开取消';
+      } else {
+        recordIcon.classList.remove('cancel');
+        recordIcon.textContent = '🎙️';
+        recordTip.classList.remove('cancel');
+        recordTip.textContent = '松开发送，上滑取消';
+      }
+    }
+
+    function finishRecording(forceCancel) {
+      if (forceCancel) isCancel = true;
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
       }
       if (recordTimer) { clearInterval(recordTimer); recordTimer = null; }
       voiceBtn.classList.remove('recording');
-      voiceBtn.textContent = '🎤 按住说话';
+    }
+
+    function showRecordOverlay() {
+      recordDurationEl.textContent = '0"';
+      recordIcon.classList.remove('cancel');
+      recordIcon.textContent = '🎙️';
+      recordTip.classList.remove('cancel');
+      recordTip.textContent = '松开发送，上滑取消';
+      recordOverlay.classList.add('show');
+    }
+
+    function hideRecordOverlay() {
+      recordOverlay.classList.remove('show');
     }
 
     function resetVoiceUI() {
+      stopPlayback();
       recordedBlob = null;
       audioChunks = [];
-      if (voiceAudio.src) URL.revokeObjectURL(voiceAudio.src);
-      voiceAudio.src = '';
       voiceBtn.style.display = '';
-      voicePreview.style.display = 'none';
+      voiceBubble.style.display = 'none';
+      voiceBubble.classList.remove('playing');
       voiceBtn.classList.remove('recording');
-      voiceBtn.textContent = '🎤 按住说话';
     }
 
-    // 按住录音（鼠标 + 触摸）
-    voiceBtn.addEventListener('mousedown', e => { e.preventDefault(); startRecording(); });
-    voiceBtn.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); });
-    voiceBtn.addEventListener('mouseup', () => stopRecording());
-    voiceBtn.addEventListener('touchend', e => { e.preventDefault(); stopRecording(); });
-    voiceBtn.addEventListener('mouseleave', () => { if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording(); });
-    voiceBtn.addEventListener('touchcancel', () => stopRecording());
+    // 按住录音（触摸）
+    voiceBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      startRecording(e.touches[0].clientY);
+    });
+    voiceBtn.addEventListener('touchmove', e => {
+      e.preventDefault();
+      updateCancelState(e.touches[0].clientY);
+    });
+    voiceBtn.addEventListener('touchend', e => {
+      e.preventDefault();
+      finishRecording(false);
+    });
+    voiceBtn.addEventListener('touchcancel', () => finishRecording(true));
 
-    voiceRemove.addEventListener('click', () => resetVoiceUI());
+    // 按住录音（鼠标，用于桌面调试）
+    voiceBtn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      startRecording(e.clientY);
+    });
+    document.addEventListener('mousemove', e => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') updateCancelState(e.clientY);
+    });
+    document.addEventListener('mouseup', () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') finishRecording(false);
+    });
+
+    // 语音气泡点击播放
+    voiceBubble.addEventListener('click', e => {
+      if (e.target === voiceRemove) return;
+      if (!recordedBlob) return;
+      if (audioPlayer && !audioPlayer.paused) {
+        stopPlayback();
+      } else {
+        playVoice();
+      }
+    });
+
+    function playVoice() {
+      stopPlayback();
+      audioPlayer = new Audio(URL.createObjectURL(recordedBlob));
+      audioPlayer.onended = () => { voiceBubble.classList.remove('playing'); audioPlayer = null; };
+      audioPlayer.play().catch(() => {});
+      voiceBubble.classList.add('playing');
+    }
+
+    function stopPlayback() {
+      if (audioPlayer) {
+        audioPlayer.pause();
+        audioPlayer = null;
+      }
+      voiceBubble.classList.remove('playing');
+    }
+
+    voiceRemove.addEventListener('click', e => {
+      e.stopPropagation();
+      resetVoiceUI();
+    });
 
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
