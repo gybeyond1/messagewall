@@ -33,7 +33,7 @@
       align-items: center;
       justify-content: center;
       /* 适配刘海/灵动岛安全区 */
-      padding: calc(20px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
+      padding: calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
       -webkit-font-smoothing: antialiased;
     }
 
@@ -43,7 +43,7 @@
       border-radius: var(--radius);
       width: 100%;
       max-width: 440px;
-      padding: 26px 22px;
+      padding: 18px 18px 20px;
       box-shadow:
         14px 14px 28px var(--shadow-dark),
         -14px -14px 28px var(--shadow-light);
@@ -51,18 +51,18 @@
 
     .card-header {
       text-align: center;
-      margin-bottom: 22px;
+      margin-bottom: 12px;
     }
 
     .card-header .badge {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 14px;
+      width: 46px;
+      height: 46px;
+      margin: 0 auto 8px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 26px;
+      font-size: 21px;
       background: var(--surface);
       box-shadow:
         inset 4px 4px 8px var(--shadow-dark),
@@ -70,18 +70,30 @@
     }
 
     .card-header h1 {
-      font-size: 21px;
+      font-size: 18px;
       font-weight: 700;
       letter-spacing: 0.5px;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .card-header p {
-      font-size: 13px;
+      font-size: 12.5px;
       color: var(--text-soft);
+      line-height: 1.5;
+      padding: 0 4px;
     }
 
-    .field { margin-bottom: 18px; }
+    /* 姓名 + 联系方式 并排一行，节省垂直空间 */
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 380px) {
+      .row-2 { grid-template-columns: 1fr; }
+    }
+
+    .field { margin-bottom: 12px; }
 
     .field label {
       display: block;
@@ -98,9 +110,9 @@
     .field input,
     .field textarea {
       width: 100%;
-      padding: 15px 16px;
+      padding: 12px 14px;
       border: none;
-      border-radius: 14px;
+      border-radius: 13px;
       font-size: 16px; /* ≥16px 防止 iOS 聚焦时自动放大 */
       color: var(--text);
       background: var(--surface);
@@ -124,15 +136,15 @@
     }
 
     .field textarea {
-      min-height: 104px;
+      min-height: 72px;
       resize: none;
     }
 
     /* ===== 图片上传区：拍照 + 相册 两个按钮 ===== */
     .upload-area {
       border: none;
-      border-radius: 14px;
-      padding: 14px;
+      border-radius: 13px;
+      padding: 10px;
       background: var(--surface);
       box-shadow:
         inset 4px 4px 8px var(--shadow-dark),
@@ -149,8 +161,8 @@
     .upload-btn {
       flex: 1;
       border: none;
-      border-radius: 12px;
-      padding: 14px 8px;
+      border-radius: 11px;
+      padding: 9px 8px;
       cursor: pointer;
       background: var(--surface);
       color: var(--text);
@@ -168,7 +180,7 @@
     }
 
     .upload-icon {
-      font-size: 28px;
+      font-size: 23px;
       filter: drop-shadow(2px 2px 2px var(--shadow-dark)) drop-shadow(-1px -1px 1px var(--shadow-light));
     }
 
@@ -213,8 +225,8 @@
     /* ===== 语音录制区 ===== */
     .voice-area {
       border: none;
-      border-radius: 14px;
-      padding: 14px;
+      border-radius: 13px;
+      padding: 10px;
       text-align: center;
       background: var(--surface);
       box-shadow:
@@ -225,8 +237,8 @@
 
     .voice-btn {
       width: 100%;
-      min-height: 48px;
-      padding: 12px;
+      min-height: 42px;
+      padding: 10px;
       color: var(--text);
       border: none;
       border-radius: 12px;
@@ -375,9 +387,9 @@
     /* ===== 提交按钮：凸出 + 主题色 ===== */
     .btn-submit {
       width: 100%;
-      min-height: 52px;
-      margin-top: 4px;
-      padding: 14px;
+      min-height: 46px;
+      margin-top: 2px;
+      padding: 12px;
       color: #fff;
       border: none;
       border-radius: 16px;
@@ -472,9 +484,9 @@
 
     /* 超小屏微调 */
     @media (max-width: 360px) {
-      .card { padding: 22px 16px; border-radius: 18px; }
-      .card-header .badge { width: 50px; height: 50px; font-size: 23px; }
-      .card-header h1 { font-size: 19px; }
+      .card { padding: 16px 14px; border-radius: 18px; }
+      .card-header .badge { width: 42px; height: 42px; font-size: 19px; }
+      .card-header h1 { font-size: 17px; }
     }
   </style>
 </head>
@@ -483,13 +495,19 @@
     <div class="card-header">
       <div class="badge">📮</div>
       <h1>留言板</h1>
-      <p>写下你想说的话，我会转达给主人</p>
+      <p id="tipText">写下你想说的话，我会转达给主人</p>
     </div>
     <div class="card-body">
       <form id="msgForm">
-        <div class="field">
-          <label>怎么称呼您？<span class="optional">选填</span></label>
-          <input type="text" id="name" placeholder="请输入您的称呼（留空则匿名）" maxlength="30">
+        <div class="row-2">
+          <div class="field">
+            <label>怎么称呼您？<span class="optional">选填</span></label>
+            <input type="text" id="name" placeholder="您的称呼" maxlength="30">
+          </div>
+          <div class="field">
+            <label>联系方式 <span class="optional">选填</span></label>
+            <input type="text" id="contact" placeholder="手机号/微信" maxlength="50">
+          </div>
         </div>
 
         <div class="field">
@@ -499,12 +517,7 @@
         </div>
 
         <div class="field">
-          <label>联系方式 <span class="optional">选填</span></label>
-          <input type="text" id="contact" placeholder="手机号、微信号等" maxlength="50">
-        </div>
-
-        <div class="field">
-          <label>添加图片 / 拍照 <span class="optional">选填 · 可只发图片</span></label>
+          <label>添加图片 / 拍照 <span class="optional">选填</span></label>
           <div class="upload-area" id="uploadArea">
             <div class="upload-btns" id="uploadBtns">
               <button type="button" class="upload-btn" id="btnCamera">
@@ -524,7 +537,7 @@
         </div>
 
         <div class="field">
-          <label>语音留言 <span class="optional">选填 · 可只发语音</span></label>
+          <label>语音留言 <span class="optional">选填</span></label>
           <div class="voice-area" id="voiceArea">
             <button type="button" class="voice-btn" id="voiceBtn">🎤 按住说话，上滑取消</button>
             <div class="voice-bubble" id="voiceBubble" style="display:none">
@@ -561,6 +574,11 @@
   </div>
 
   <script>
+    // 加载管理员配置的首页提示语（可自定义，如留私人号码供紧急联系）
+    fetch('/api/config').then(r => r.json()).then(d => {
+      if (d && d.frontendTip) document.getElementById('tipText').textContent = d.frontendTip;
+    }).catch(() => {});
+
     const form = document.getElementById('msgForm');
     const cameraInput = document.getElementById('cameraInput');
     const galleryInput = document.getElementById('galleryInput');

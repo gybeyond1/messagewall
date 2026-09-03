@@ -412,7 +412,7 @@ app.delete('/api/messages', (req, res) => {
 
 // ============ API：更新配置 ============
 app.put('/api/settings', (req, res) => {
-  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase } = req.body;
+  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip } = req.body;
   const save = (key, value) => {
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value != null ? String(value) : '');
   };
@@ -424,6 +424,7 @@ app.put('/api/settings', (req, res) => {
   save('wx_userid', wxUserid);
   save('wx_message_format', wxMessageFormat);
   save('wx_pic_base', wxPicBase);
+  save('frontend_tip', frontendTip);
   if (newPassword) {
     const salt = bcrypt.genSaltSync(10);
     save('admin_password', bcrypt.hashSync(newPassword, salt));
@@ -445,8 +446,15 @@ app.get('/api/settings', (req, res) => {
     wxUserid: settings.wx_userid || '',
     wxMessageFormat: settings.wx_message_format || '[留言板]\n{title}\n\n{content}',
     wxPicBase: settings.wx_pic_base || '',
+    frontendTip: settings.frontend_tip || '写下你想说的话，我会转达给主人',
     hasPassword: !!settings.admin_password
   });
+});
+
+// ============ API：公开配置（首页提示语等，无需登录） ============
+app.get('/api/config', (req, res) => {
+  const tip = getSetting('frontend_tip');
+  res.json({ frontendTip: tip || '写下你想说的话，我会转达给主人' });
 });
 
 // ============ API：测试 Webhook ============

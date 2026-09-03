@@ -156,6 +156,9 @@ a{text-decoration:none;color:inherit}
     </div>
     <div class="page" id="page-settings">
       <h2>系统设置</h2>
+      <div class="card"><h3>首页提示语</h3>
+        <div class="fg"><label>留言板首页顶部提示文字</label><textarea id="frontendTip" rows="2" placeholder="写下你想说的话，我会转达给主人">写下你想说的话，我会转达给主人</textarea><div class="hint">显示在留言板首页顶部的提示语，可自定义，例如填写私人手机号供紧急联系等</div></div>
+      </div>
       <div class="card"><h3>Webhook 通知</h3>
         <div class="fg"><label>Webhook 地址</label><input type="text" id="hookUrl" placeholder="https://example.com/webhook"><button class="btn btn-primary btn-sm" id="testHookBtn" onclick="testWebhook()" style="margin-left:8px;white-space:nowrap">🧪 测试</button><div class="hint">留言提交后将 POST JSON 到该地址</div></div>
         <div id="testResult" style="font-size:13px;margin-top:6px"></div>
@@ -244,6 +247,7 @@ async function loadSettings() {
     document.getElementById('wxUserid').value = data.wxUserid || '';
     document.getElementById('wxMessageFormat').value = data.wxMessageFormat || '[留言板]\n{title}\n\n{content}';
     document.getElementById('wxPicBase').value = data.wxPicBase || '';
+    document.getElementById('frontendTip').value = data.frontendTip || '写下你想说的话，我会转达给主人';
   } catch(e) {}
 }
 
@@ -257,10 +261,11 @@ async function saveSettings() {
   const wxUserid = document.getElementById('wxUserid').value.trim();
   const wxMessageFormat = document.getElementById('wxMessageFormat').value.trim();
   const wxPicBase = document.getElementById('wxPicBase').value.trim();
+  const frontendTip = document.getElementById('frontendTip').value.trim();
   await fetch(API + '/settings', {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({webhookUrl:url, webhookEnabled:enabled, newPassword:newPwd,
-      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase})
+      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip})
   });
   const msg = document.getElementById('settingsMsg');
   msg.textContent = '✅ 设置已保存'; msg.style.color = '#4ade80';
