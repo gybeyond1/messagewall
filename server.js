@@ -9,13 +9,12 @@ const multer = require('multer');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
+const DEFAULT_WALL_USER = 'gybeyond';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'messages.db');
 
-// 确保数据目录存在
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-// 初始化数据库
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -26,26 +25,56 @@ db.exec(`
     contact TEXT DEFAULT '',
     image_path TEXT DEFAULT '',
     voice_path TEXT DEFAULT '',
+    wall_username TEXT DEFAULT 'gybeyond',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS wall_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    display_name TEXT DEFAULT '',
+    webhook_url TEXT DEFAULT '',
+    webhook_enabled TEXT DEFAULT 'false',
+    wx_corpid TEXT DEFAULT '',
+    wx_agentid TEXT DEFAULT '',
+    wx_secret TEXT DEFAULT '',
+    wx_userid TEXT DEFAULT '',
+    wx_message_format TEXT DEFAULT '',
+    wx_pic_base TEXT DEFAULT '',
+    frontend_tip TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
-// 兼容旧库：补 voice_path 列（已存在则忽略）
 try { db.exec(`ALTER TABLE messages ADD COLUMN voice_path TEXT DEFAULT ''`); } catch (_) {}
+try { db.exec(`ALTER TABLE messages ADD COLUMN wall_username TEXT DEFAULT 'gybeyond'`); } catch (_) {}
 
-// 初始化管理员密码（首次启动且数据库无记录时写入默认密码）
 const passwordHash = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password') || null;
 if (!passwordHash) {
   const salt = bcrypt.genSaltSync(10);
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, salt));
 }
 
-// ============ 通知发送 ============
-function getSetting(key) {
-  return db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value;
+function migrateDefaultUser() {
+  const existing = db.prepare('SELECT id FROM wall_users WHERE username = ?').get(DEFAULT_WALL_USER);
+  if (existing) return;
+  const get = (k) => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value || '';
+  db.prepare(`INSERT INTO wall_users (username, display_name, webhook_url, webhook_enabled, wx_corpid, wx_agentid, wx_secret, wx_userid, wx_message_format, wx_pic_base, frontend_tip)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    DEFAULT_WALL_USER, '默认留言板',
+    get('webhook_url'), get('webhook_enabled') || 'false',
+    get('wx_corpid'), get('wx_agentid'), get('wx_secret'), get('wx_userid'),
+    get('wx_message_format') || '[留言板]\n{title}\n\n{content}',
+    get('wx_pic_base'), get('frontend_tip') || '写下你想说的话，我会转达给主人'
+  );
+  console.log(`[migrate] 已创建默认留言板用户: ${DEFAULT_WALL_USER}`);
+}
+migrateDefaultUser();
+
+function getWallUser(username) {
+  return db.prepare('SELECT * FROM wall_users WHERE username = ?').get(username) || null;
 }
 
 function buildWebhookBody(title, content, imageDataUri, voiceDataUri) {
@@ -55,9 +84,10 @@ function buildWebhookBody(title, content, imageDataUri, voiceDataUri) {
   return body;
 }
 
-async function sendWebhook(title, content, imageDataUri, voiceDataUri) {
-  const wUrl = getSetting('webhook_url') || '';
-  const wEnabled = getSetting('webhook_enabled') === 'true';
+async function sendWebhook(user, title, content, imageDataUri, voiceDataUri) {
+  if (!user) return;
+  const wUrl = user.webhook_url || '';
+  const wEnabled = user.webhook_enabled === 'true';
   if (!wEnabled || !wUrl) return;
   try {
     await fetch(wUrl, {
@@ -70,11 +100,9 @@ async function sendWebhook(title, content, imageDataUri, voiceDataUri) {
   }
 }
 
-// ffmpeg 转 AMR（企业微信语音要求：8kHz 单声道 AMR-NB）
 function convertToAmr(inputPath) {
   return new Promise((resolve, reject) => {
     const outputPath = inputPath + '.amr';
-    // 多种编码器配置依次尝试（alpine ffmpeg 可能只有部分可用）
     const attempts = [
       ['-ar', '8000', '-ac', '1', '-ab', '12.2k', '-c:a', 'libopencore_amrnb'],
       ['-ar', '8000', '-ac', '1', '-c:a', 'libopencore_amrnb'],
@@ -83,66 +111,47 @@ function convertToAmr(inputPath) {
     ];
     let idx = 0;
     function tryNext() {
-      if (idx >= attempts.length) {
-        reject(new Error('所有 AMR 转码尝试均失败'));
-        return;
-      }
+      if (idx >= attempts.length) { reject(new Error('所有 AMR 转码尝试均失败')); return; }
       const args = ['-y', '-i', inputPath, ...attempts[idx], outputPath];
       idx++;
       execFile('ffmpeg', args, (err, stdout, stderr) => {
-        if (err) {
-          console.error('ffmpeg 转码尝试失败:', err.message, stderr ? stderr.slice(-300) : '');
-          tryNext();
-        } else {
-          resolve(outputPath);
-        }
+        if (err) { console.error('ffmpeg 转码尝试失败:', err.message); tryNext(); }
+        else resolve(outputPath);
       });
     }
     tryNext();
   });
 }
 
-// 上传语音临时素材，返回 media_id
 async function uploadVoiceMedia(accessToken, amrPath) {
   const form = new FormData();
   const buf = fs.readFileSync(amrPath);
   form.append('media', new Blob([buf], { type: 'audio/amr' }), 'voice.amr');
-  const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${accessToken}&type=voice`, {
-    method: 'POST',
-    body: form
-  });
+  const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${accessToken}&type=voice`, { method: 'POST', body: form });
   const data = await resp.json();
   if (data.errcode) throw new Error('上传语音素材失败: ' + data.errmsg);
   return data.media_id;
 }
 
-async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath, voiceAmrPath) {
-  const corpId = getSetting('wx_corpid') || '';
-  const agentId = getSetting('wx_agentid') || '';
-  const secret = getSetting('wx_secret') || '';
-  const userIds = getSetting('wx_userid') || '';
-  const picBase = getSetting('wx_pic_base') || '';
-  const msgFormat = getSetting('wx_message_format') || '[留言板]\n{title}\n\n{content}';
+async function sendWeChatWork(user, title, content, imageDataUri, imagePath, voicePath, voiceAmrPath) {
+  if (!user) return;
+  const corpId = user.wx_corpid || '';
+  const agentId = user.wx_agentid || '';
+  const secret = user.wx_secret || '';
+  const userIds = user.wx_userid || '';
+  const picBase = user.wx_pic_base || '';
+  const msgFormat = user.wx_message_format || '[留言板]\n{title}\n\n{content}';
   if (!corpId || !agentId || !secret || !userIds) return;
 
-  // 获取 access_token
   let accessToken;
   try {
     const tokenResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${corpId}&corpsecret=${secret}`);
     const tokenData = await tokenResp.json();
-    if (tokenData.errcode) {
-      console.error('企业微信获取 token 失败:', tokenData.errmsg);
-      return;
-    }
+    if (tokenData.errcode) { console.error('企业微信获取 token 失败:', tokenData.errmsg); return; }
     accessToken = tokenData.access_token;
-  } catch (e) {
-    console.error('企业微信获取 token 失败:', e.message);
-    return;
-  }
+  } catch (e) { console.error('企业微信获取 token 失败:', e.message); return; }
 
-  // ===== 有语音文件 → 先发文本通知，再发语音条（企业微信语音消息不能带文字，必须分开发） =====
   if (voicePath) {
-    // 1. 文本通知
     let noticeText;
     if (content && content.trim()) {
       noticeText = `🆕你有一条新留言\n👤用户：${title}\n📝留言：${content}`;
@@ -150,85 +159,36 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
       noticeText = `🆕你有一条新语音留言\n👤用户：${title}`;
     }
     try {
-      const textResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          touser: userIds,
-          msgtype: 'text',
-          agentid: agentId,
-          text: { content: noticeText }
-        })
+      await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ touser: userIds, msgtype: 'text', agentid: agentId, text: { content: noticeText } })
       });
-      const textData = await textResp.json();
-      if (textData.errcode) console.error('企业微信发送语音通知失败:', textData.errmsg);
-    } catch (e) {
-      console.error('企业微信发送语音通知失败:', e.message);
-    }
-
-    // 等文本通知送达后再发语音条，确保企业微信里文本在前、语音在后
+    } catch (e) { console.error('企业微信发送语音通知失败:', e.message); }
     await new Promise(r => setTimeout(r, 800));
-
-    // 2. 语音条（转码成功才发）
     if (voiceAmrPath) {
       try {
         const mediaId = await uploadVoiceMedia(accessToken, voiceAmrPath);
-        const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            touser: userIds,
-            msgtype: 'voice',
-            agentid: agentId,
-            voice: { media_id: mediaId }
-          })
+        await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ touser: userIds, msgtype: 'voice', agentid: agentId, voice: { media_id: mediaId } })
         });
-        const d = await resp.json();
-        if (d.errcode) console.error('企业微信发送 voice 失败:', d.errmsg);
-      } catch (e) {
-        console.error('企业微信发送 voice 失败:', e.message);
-      }
-    } else {
-      console.error('语音转 AMR 失败，仅发送了文本通知（请检查 ffmpeg 日志）');
+      } catch (e) { console.error('企业微信发送 voice 失败:', e.message); }
     }
     return;
   }
 
-  // 带图且配置了图片公网地址 → 发送 news 图文消息（picurl 走外链，不受 2MB 限制）
   if (imagePath && picBase) {
     const imgUrl = picBase.replace(/\/+$/, '') + '/uploads/' + imagePath;
     const desc = (content && content.trim()) ? `📝留言：${content}` : '（仅图片留言）';
     try {
-      const resp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          touser: userIds,
-          msgtype: 'news',
-          agentid: agentId,
-          news: {
-            articles: [{
-              title: `🆕新留言｜${title}`,
-              description: desc,
-              picurl: imgUrl,
-              url: imgUrl
-            }]
-          }
-        })
+      await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ touser: userIds, msgtype: 'news', agentid: agentId, news: { articles: [{ title: `🆕新留言｜${title}`, description: desc, picurl: imgUrl, url: imgUrl }] } })
       });
-      const d = await resp.json();
-      if (d.errcode) console.error('企业微信发送 news 失败:', d.errmsg);
       return;
-    } catch (e) {
-      console.error('企业微信发送 news 失败:', e.message);
-      return;
-    }
+    } catch (e) { console.error('企业微信发送 news 失败:', e.message); return; }
   }
 
-  // 无图，或未配置公网地址 → 发送文本消息
-  const messageContent = msgFormat
-    .replace(/{title}/g, title)
-    .replace(/{content}/g, content || '');
   let text;
   if (imagePath && !picBase) {
     text = `🆕你有一条新留言（⚠️未配置图片公网地址，图片未推送）\n\n👨🏻用户：${title}\n📝留言：${content || '（仅图片）'}`;
@@ -237,35 +197,23 @@ async function sendWeChatWork(title, content, imageDataUri, imagePath, voicePath
   }
   try {
     await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        touser: userIds,
-        msgtype: 'text',
-        agentid: agentId,
-        text: { content: text }
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ touser: userIds, msgtype: 'text', agentid: agentId, text: { content: text } })
     });
-  } catch (e) {
-    console.error('企业微信发送文字失败:', e.message);
-  }
+  } catch (e) { console.error('企业微信发送文字失败:', e.message); }
 }
 
-// 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 创建 uploads 目录
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// ============ 文件上传配置 ============
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const ALLOWED_VOICE_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2'];
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_VOICE_SIZE = 10 * 1024 * 1024; // 10MB（转 AMR 后会小很多）
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_VOICE_SIZE = 10 * 1024 * 1024;
 const upload = multer({
   dest: uploadsDir,
   limits: { fileSize: Math.max(MAX_IMAGE_SIZE, MAX_VOICE_SIZE) },
@@ -274,15 +222,12 @@ const upload = multer({
       if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) cb(null, true);
       else cb(new Error('仅支持 JPEG / PNG / WebP 格式的图片'));
     } else if (file.fieldname === 'voice') {
-      if (ALLOWED_VOICE_TYPES.includes(file.mimetype) || file.mimetype.startsWith('audio/')) cb(null, true);
+      if (file.mimetype.startsWith('audio/')) cb(null, true);
       else cb(new Error('仅支持音频格式'));
-    } else {
-      cb(new Error('未知字段: ' + file.fieldname));
-    }
+    } else cb(new Error('未知字段: ' + file.fieldname));
   }
 });
 
-// ============ 前端路由 ============
 app.get('/message', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -291,8 +236,19 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// ============ API：提交留言 ============
-app.post('/api/message', (req, res) => {
+const RESERVED_PATHS = ['admin', 'message', 'api', 'uploads', 'favicon.ico'];
+app.get('/:username', (req, res, next) => {
+  const username = req.params.username;
+  if (RESERVED_PATHS.includes(username) || username.startsWith('.')) return next();
+  const user = getWallUser(username);
+  if (!user) return res.status(404).send('留言板不存在');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+async function handleMessageSubmit(req, res, wallUsername) {
+  const user = getWallUser(wallUsername);
+  if (!user) return res.status(404).json({ error: '留言板用户不存在' });
+
   upload.fields([{ name: 'image', maxCount: 1 }, { name: 'voice', maxCount: 1 }])(req, res, async (err) => {
     if (err) {
       const msg = err.code === 'LIMIT_FILE_SIZE' ? '文件过大' : err.message;
@@ -308,7 +264,6 @@ app.post('/api/message', (req, res) => {
       return res.status(400).json({ error: '留言内容、图片、语音至少填写一项' });
     }
 
-    // 保存图片（补扩展名），并读出 base64 用于 webhook
     let imagePath = '';
     let imageDataUri = '';
     if (imageFile) {
@@ -321,7 +276,6 @@ app.post('/api/message', (req, res) => {
       imageDataUri = `data:${imageFile.mimetype};base64,${buf.toString('base64')}`;
     }
 
-    // 保存语音（补扩展名），转 AMR 用于企业微信，原始格式 base64 用于 webhook
     let voicePath = '';
     let voiceDataUri = '';
     let voiceAmrPath = '';
@@ -331,33 +285,28 @@ app.post('/api/message', (req, res) => {
       const newName = voiceFile.filename + '.' + ext;
       fs.renameSync(voiceFile.path, path.join(uploadsDir, newName));
       voicePath = newName;
-      // webhook 用原始格式 base64（EchoLink 直接存和播放）
       const buf = fs.readFileSync(path.join(uploadsDir, newName));
       voiceDataUri = `data:${voiceFile.mimetype};base64,${buf.toString('base64')}`;
-      // 转 AMR 用于企业微信 voice 通道
-      try {
-        voiceAmrPath = await convertToAmr(path.join(uploadsDir, newName));
-      } catch (e) {
-        console.error('语音转 AMR 失败:', e.message);
-        // 转码失败则不发企业微信语音，但 webhook 仍发原始格式
-      }
+      try { voiceAmrPath = await convertToAmr(path.join(uploadsDir, newName)); }
+      catch (e) { console.error('语音转 AMR 失败:', e.message); }
     }
 
-    const stmt = db.prepare('INSERT INTO messages (name, content, contact, image_path, voice_path) VALUES (?, ?, ?, ?, ?)');
-    const info = stmt.run(displayName, textContent, contact || '', imagePath, voicePath);
+    db.prepare('INSERT INTO messages (name, content, contact, image_path, voice_path, wall_username) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(displayName, textContent, contact || '', imagePath, voicePath, wallUsername);
 
-    // 发送通知
     const title = contact ? `${displayName}（${contact}）` : displayName;
     await Promise.all([
-      sendWebhook(title, textContent, imageDataUri, voiceDataUri),
-      sendWeChatWork(title, textContent, imageDataUri, imagePath, voicePath, voiceAmrPath)
+      sendWebhook(user, title, textContent, imageDataUri, voiceDataUri),
+      sendWeChatWork(user, title, textContent, imageDataUri, imagePath, voicePath, voiceAmrPath)
     ]);
 
-    res.json({ id: info.lastInsertRowid, success: true });
+    res.json({ success: true });
   });
-});
+}
 
-// ============ API：管理员认证 ============
+app.post('/api/message', (req, res) => handleMessageSubmit(req, res, DEFAULT_WALL_USER));
+app.post('/api/message/:username', (req, res) => handleMessageSubmit(req, res, req.params.username));
+
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   const stored = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password');
@@ -368,150 +317,177 @@ app.post('/api/admin/login', (req, res) => {
   }
 });
 
-// ============ API：获取所有留言 ============
 app.get('/api/messages', (req, res) => {
-  const msgs = db.prepare('SELECT * FROM messages ORDER BY created_at DESC').all();
+  const { username } = req.query;
+  let msgs;
+  if (username) {
+    msgs = db.prepare('SELECT * FROM messages WHERE wall_username = ? ORDER BY created_at DESC').all(username);
+  } else {
+    msgs = db.prepare('SELECT * FROM messages ORDER BY created_at DESC').all();
+  }
   res.json(msgs);
 });
 
-// ============ API：删除单条留言 ============
 app.delete('/api/message/:id', (req, res) => {
   const { id } = req.params;
   const msg = db.prepare('SELECT image_path, voice_path FROM messages WHERE id = ?').get(id);
-  if (msg?.image_path) {
-    const imgPath = path.join(__dirname, 'uploads', msg.image_path);
-    if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-  }
+  if (msg?.image_path) { const p = path.join(uploadsDir, msg.image_path); if (fs.existsSync(p)) fs.unlinkSync(p); }
   if (msg?.voice_path) {
-    const voicePath = path.join(__dirname, 'uploads', msg.voice_path);
-    if (fs.existsSync(voicePath)) fs.unlinkSync(voicePath);
-    // 同时删转码产物
-    if (fs.existsSync(voicePath + '.amr')) fs.unlinkSync(voicePath + '.amr');
+    const p = path.join(uploadsDir, msg.voice_path); if (fs.existsSync(p)) fs.unlinkSync(p);
+    if (fs.existsSync(p + '.amr')) fs.unlinkSync(p + '.amr');
   }
   db.prepare('DELETE FROM messages WHERE id = ?').run(id);
   res.json({ success: true });
 });
 
-// ============ API：清空所有留言 ============
 app.delete('/api/messages', (req, res) => {
-  const msgs = db.prepare('SELECT image_path, voice_path FROM messages').all();
+  const { username } = req.query;
+  let msgs;
+  if (username) msgs = db.prepare('SELECT image_path, voice_path FROM messages WHERE wall_username = ?').all(username);
+  else msgs = db.prepare('SELECT image_path, voice_path FROM messages').all();
   msgs.forEach(m => {
-    if (m?.image_path) {
-      const imgPath = path.join(__dirname, 'uploads', m.image_path);
-      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-    }
-    if (m?.voice_path) {
-      const voicePath = path.join(__dirname, 'uploads', m.voice_path);
-      if (fs.existsSync(voicePath)) fs.unlinkSync(voicePath);
-      if (fs.existsSync(voicePath + '.amr')) fs.unlinkSync(voicePath + '.amr');
-    }
+    if (m?.image_path) { const p = path.join(uploadsDir, m.image_path); if (fs.existsSync(p)) fs.unlinkSync(p); }
+    if (m?.voice_path) { const p = path.join(uploadsDir, m.voice_path); if (fs.existsSync(p)) fs.unlinkSync(p); if (fs.existsSync(p + '.amr')) fs.unlinkSync(p + '.amr'); }
   });
-  db.prepare('DELETE FROM messages').run();
+  if (username) db.prepare('DELETE FROM messages WHERE wall_username = ?').run(username);
+  else db.prepare('DELETE FROM messages').run();
   res.json({ success: true });
 });
 
-// ============ API：更新配置 ============
+app.get('/api/users', (req, res) => {
+  const users = db.prepare('SELECT id, username, display_name, webhook_url, webhook_enabled, wx_corpid, wx_agentid, wx_userid, wx_pic_base, frontend_tip, created_at FROM wall_users ORDER BY id ASC').all();
+  res.json(users);
+});
+
+app.post('/api/users', (req, res) => {
+  const { username, displayName, webhookUrl, webhookEnabled, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip } = req.body;
+  if (!username || !/^[a-zA-Z0-9_-]{2,32}$/.test(username)) {
+    return res.status(400).json({ error: '用户名需为 2-32 位字母、数字、下划线或连字符' });
+  }
+  if (RESERVED_PATHS.includes(username)) return res.status(400).json({ error: '该用户名是保留字，不可使用' });
+  const existing = db.prepare('SELECT id FROM wall_users WHERE username = ?').get(username);
+  if (existing) return res.status(409).json({ error: '用户名已存在' });
+  try {
+    db.prepare(`INSERT INTO wall_users (username, display_name, webhook_url, webhook_enabled, wx_corpid, wx_agentid, wx_secret, wx_userid, wx_message_format, wx_pic_base, frontend_tip)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      username, displayName || '', webhookUrl || '', webhookEnabled ? 'true' : 'false',
+      wxCorpid || '', wxAgentid || '', wxSecret || '', wxUserid || '',
+      wxMessageFormat || '[留言板]\n{title}\n\n{content}', wxPicBase || '', frontendTip || '写下你想说的话，我会转达给主人'
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/users/:username', (req, res) => {
+  const { username } = req.params;
+  const { displayName, webhookUrl, webhookEnabled, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip } = req.body;
+  const user = getWallUser(username);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+  db.prepare(`UPDATE wall_users SET display_name=?, webhook_url=?, webhook_enabled=?, wx_corpid=?, wx_agentid=?, wx_secret=?, wx_userid=?, wx_message_format=?, wx_pic_base=?, frontend_tip=? WHERE username=?`).run(
+    displayName ?? user.display_name,
+    webhookUrl ?? user.webhook_url,
+    webhookEnabled != null ? (webhookEnabled ? 'true' : 'false') : user.webhook_enabled,
+    wxCorpid ?? user.wx_corpid,
+    wxAgentid ?? user.wx_agentid,
+    wxSecret ?? user.wx_secret,
+    wxUserid ?? user.wx_userid,
+    wxMessageFormat ?? user.wx_message_format,
+    wxPicBase ?? user.wx_pic_base,
+    frontendTip ?? user.frontend_tip,
+    username
+  );
+  res.json({ success: true });
+});
+
+app.delete('/api/users/:username', (req, res) => {
+  const { username } = req.params;
+  if (username === DEFAULT_WALL_USER) return res.status(400).json({ error: '默认用户不可删除' });
+  const user = getWallUser(username);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+  const msgs = db.prepare('SELECT image_path, voice_path FROM messages WHERE wall_username = ?').all(username);
+  msgs.forEach(m => {
+    if (m?.image_path) { const p = path.join(uploadsDir, m.image_path); if (fs.existsSync(p)) fs.unlinkSync(p); }
+    if (m?.voice_path) { const p = path.join(uploadsDir, m.voice_path); if (fs.existsSync(p)) fs.unlinkSync(p); if (fs.existsSync(p + '.amr')) fs.unlinkSync(p + '.amr'); }
+  });
+  db.prepare('DELETE FROM messages WHERE wall_username = ?').run(username);
+  db.prepare('DELETE FROM wall_users WHERE username = ?').run(username);
+  res.json({ success: true });
+});
+
 app.put('/api/settings', (req, res) => {
   const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip } = req.body;
-  const save = (key, value) => {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value != null ? String(value) : '');
-  };
-  save('webhook_url', webhookUrl);
-  save('webhook_enabled', webhookEnabled === true || webhookEnabled === 'true' ? 'true' : 'false');
-  save('wx_corpid', wxCorpid);
-  save('wx_agentid', wxAgentid);
-  save('wx_secret', wxSecret);
-  save('wx_userid', wxUserid);
-  save('wx_message_format', wxMessageFormat);
-  save('wx_pic_base', wxPicBase);
-  save('frontend_tip', frontendTip);
+  db.prepare(`UPDATE wall_users SET webhook_url=?, webhook_enabled=?, wx_corpid=?, wx_agentid=?, wx_secret=?, wx_userid=?, wx_message_format=?, wx_pic_base=?, frontend_tip=? WHERE username=?`).run(
+    webhookUrl ?? '', webhookEnabled ? 'true' : 'false',
+    wxCorpid ?? '', wxAgentid ?? '', wxSecret ?? '', wxUserid ?? '',
+    wxMessageFormat ?? '[留言板]\n{title}\n\n{content}', wxPicBase ?? '', frontendTip ?? '', DEFAULT_WALL_USER
+  );
   if (newPassword) {
     const salt = bcrypt.genSaltSync(10);
-    save('admin_password', bcrypt.hashSync(newPassword, salt));
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(newPassword, salt));
   }
   res.json({ success: true });
 });
 
-// ============ API：读取配置 ============
 app.get('/api/settings', (req, res) => {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
-  const settings = {};
-  rows.forEach(r => { settings[r.key] = r.value; });
+  const user = getWallUser(DEFAULT_WALL_USER);
   res.json({
-    webhookUrl: settings.webhook_url || '',
-    webhookEnabled: settings.webhook_enabled === 'true',
-    wxCorpid: settings.wx_corpid || '',
-    wxAgentid: settings.wx_agentid || '',
-    wxSecret: settings.wx_secret || '',
-    wxUserid: settings.wx_userid || '',
-    wxMessageFormat: settings.wx_message_format || '[留言板]\n{title}\n\n{content}',
-    wxPicBase: settings.wx_pic_base || '',
-    frontendTip: settings.frontend_tip || '写下你想说的话，我会转达给主人',
-    hasPassword: !!settings.admin_password
+    webhookUrl: user?.webhook_url || '',
+    webhookEnabled: user?.webhook_enabled === 'true',
+    wxCorpid: user?.wx_corpid || '',
+    wxAgentid: user?.wx_agentid || '',
+    wxSecret: user?.wx_secret || '',
+    wxUserid: user?.wx_userid || '',
+    wxMessageFormat: user?.wx_message_format || '[留言板]\n{title}\n\n{content}',
+    wxPicBase: user?.wx_pic_base || '',
+    frontendTip: user?.frontend_tip || '写下你想说的话，我会转达给主人',
+    hasPassword: !!db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password')
   });
 });
 
-// ============ API：公开配置（首页提示语等，无需登录） ============
 app.get('/api/config', (req, res) => {
-  const tip = getSetting('frontend_tip');
-  res.json({ frontendTip: tip || '写下你想说的话，我会转达给主人' });
+  const user = getWallUser(DEFAULT_WALL_USER);
+  res.json({ frontendTip: user?.frontend_tip || '写下你想说的话，我会转达给主人', wallUsername: DEFAULT_WALL_USER });
+});
+app.get('/api/config/:username', (req, res) => {
+  const user = getWallUser(req.params.username);
+  if (!user) return res.status(404).json({ error: '留言板不存在' });
+  res.json({ frontendTip: user.frontend_tip || '写下你想说的话，我会转达给主人', wallUsername: user.username });
 });
 
-// ============ API：测试 Webhook ============
 app.post('/api/webhook/test', async (req, res) => {
   const { url, title, content } = req.body;
   if (!url) return res.status(400).json({ error: 'URL 不能为空' });
   try {
     const start = Date.now();
     const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildWebhookBody(title || '测试员', content || '这是一条测试留言', ''))
     });
-    const elapsed = Date.now() - start;
-    res.json({ success: resp.ok, status: resp.status, elapsed });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: resp.ok, status: resp.status, elapsed: Date.now() - start });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ============ API：测试企业微信 ============
 app.post('/api/wx/test', async (req, res) => {
   const { corpId, agentId, secret, userId } = req.body;
-  if (!corpId || !secret || !userId) {
-    return res.status(400).json({ error: '请填写完整的企业微信配置' });
-  }
+  if (!corpId || !secret || !userId) return res.status(400).json({ error: '请填写完整的企业微信配置' });
   try {
     const start = Date.now();
     const tokenResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${corpId}&corpsecret=${secret}`);
     const tokenData = await tokenResp.json();
-    if (tokenData.errcode) {
-      return res.status(400).json({ success: false, error: tokenData.errmsg });
-    }
+    if (tokenData.errcode) return res.status(400).json({ success: false, error: tokenData.errmsg });
     const msgResp = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${tokenData.access_token}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        touser: userId,
-        msgtype: 'text',
-        agentid: agentId,
-        text: { content: '[留言板测试] 这是一条测试消息，如果你收到了说明配置正确。' }
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ touser: userId, msgtype: 'text', agentid: agentId, text: { content: '[留言板测试] 这是一条测试消息，如果你收到了说明配置正确。' } })
     });
     const msgData = await msgResp.json();
-    const elapsed = Date.now() - start;
-    if (msgData.errcode) {
-      res.json({ success: false, error: msgData.errmsg, elapsed });
-    } else {
-      res.json({ success: true, elapsed });
-    }
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    if (msgData.errcode) res.json({ success: false, error: msgData.errmsg, elapsed: Date.now() - start });
+    else res.json({ success: true, elapsed: Date.now() - start });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ============ 启动 ============
 app.listen(PORT, () => {
   console.log(`留言板服务已启动 → http://localhost:${PORT}/message`);
   console.log(`管理后台 → http://localhost:${PORT}/admin`);
+  const users = db.prepare('SELECT username FROM wall_users').all();
+  console.log(`已加载留言板用户: ${users.map(u => u.username).join(', ')}`);
 });
