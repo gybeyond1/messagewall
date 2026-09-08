@@ -280,6 +280,12 @@ async function handleMessageSubmit(req, res, wallUsername) {
     const voiceFile = req.files?.voice?.[0] || null;
 
     const displayName = (name && name.trim()) ? name.trim() : '匿名访客';
+    if (displayName.length > 5) {
+      return res.status(400).json({ error: '称呼最多5个字' });
+    }
+    if (contact && contact.trim() && contact.trim().length > 11) {
+      return res.status(400).json({ error: '联系方式最多11位' });
+    }
     if (!textContent.trim() && !imageFile && !voiceFile) {
       return res.status(400).json({ error: '留言内容、图片、语音至少填写一项' });
     }
@@ -464,6 +470,29 @@ app.post('/api/sync-user', (req, res) => {
     console.log(`[sync] 已创建留言板用户: ${username}`);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// EchoLink 删除用户时自动调用，在留言板删除对应用户
+app.post('/api/delete-user', (req, res) => {
+  const { username } = req.body;
+  if (!username || !/^[a-zA-Z0-9_-]{2,32}$/.test(username)) {
+    return res.status(400).json({ error: '用户名不合法' });
+  }
+  if (username === DEFAULT_WALL_USER) {
+    return res.status(400).json({ error: '默认用户不可删除' });
+  }
+  const existing = db.prepare('SELECT id FROM wall_users WHERE username = ?').get(username);
+  if (!existing) return res.json({ success: true, skipped: true });
+  // 删除该用户的留言记录和上传文件
+  const msgs = db.prepare('SELECT image_path, voice_path FROM messages WHERE wall_username = ?').all(username);
+  for (const m of msgs) {
+    if (m?.image_path) { const p = path.join(uploadsDir, m.image_path); if (fs.existsSync(p)) fs.unlinkSync(p); }
+    if (m?.voice_path) { const p = path.join(uploadsDir, m.voice_path); if (fs.existsSync(p)) fs.unlinkSync(p); if (fs.existsSync(p + '.amr')) fs.unlinkSync(p + '.amr'); }
+  }
+  db.prepare('DELETE FROM messages WHERE wall_username = ?').run(username);
+  db.prepare('DELETE FROM wall_users WHERE username = ?').run(username);
+  console.log(`[sync] 已删除留言板用户: ${username}`);
+  res.json({ success: true });
 });
 
 // ============ 配置（兼容旧接口 + 新接口） ============
