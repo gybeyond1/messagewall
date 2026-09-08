@@ -440,10 +440,36 @@ app.delete('/api/users/:username', (req, res) => {
   res.json({ success: true });
 });
 
+// ============ EchoLink 用户同步 ============
+// EchoLink 注册新用户时自动调用，在留言板创建对应用户
+app.post('/api/sync-user', (req, res) => {
+  const { username } = req.body;
+  if (!username || !/^[a-zA-Z0-9_-]{2,32}$/.test(username)) {
+    return res.status(400).json({ error: '用户名不合法' });
+  }
+  if (RESERVED_PATHS.includes(username)) return res.status(400).json({ error: '保留字' });
+  const existing = db.prepare('SELECT id FROM wall_users WHERE username = ?').get(username);
+  if (existing) return res.json({ success: true, skipped: true });
+  const echolinkBase = db.prepare('SELECT value FROM settings WHERE key = ?').get('echolink_webhook_base')?.value || '';
+  const webhookUrl = echolinkBase ? `${echolinkBase.replace(/\/$/, '')}/api/webhook/messagewall/${username}` : '';
+  try {
+    db.prepare(`INSERT INTO wall_users (username, display_name, webhook_url, webhook_enabled, wx_corpid, wx_agentid, wx_secret, wx_userid, wx_message_format, wx_pic_base, frontend_tip)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      username, `${username}的留言板`,
+      webhookUrl, 'true',
+      '', '', '', '',
+      '[留言板]\n{title}\n\n{content}', '',
+      '有事请留言'
+    );
+    console.log(`[sync] 已创建留言板用户: ${username}`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============ 配置（兼容旧接口 + 新接口） ============
 app.put('/api/settings', (req, res) => {
   // 旧接口：更新默认用户配置
-  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip } = req.body;
+  const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip, echolinkWebhookBase } = req.body;
   db.prepare(`UPDATE wall_users SET webhook_url=?, webhook_enabled=?, wx_corpid=?, wx_agentid=?, wx_secret=?, wx_userid=?, wx_message_format=?, wx_pic_base=?, frontend_tip=? WHERE username=?`).run(
     webhookUrl ?? '', webhookEnabled ? 'true' : 'false',
     wxCorpid ?? '', wxAgentid ?? '', wxSecret ?? '', wxUserid ?? '',
@@ -452,6 +478,9 @@ app.put('/api/settings', (req, res) => {
   if (newPassword) {
     const salt = bcrypt.genSaltSync(10);
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(newPassword, salt));
+  }
+  if (echolinkWebhookBase != null) {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('echolink_webhook_base', echolinkWebhookBase);
   }
   res.json({ success: true });
 });
@@ -468,6 +497,7 @@ app.get('/api/settings', (req, res) => {
     wxMessageFormat: user?.wx_message_format || '[留言板]\n{title}\n\n{content}',
     wxPicBase: user?.wx_pic_base || '',
     frontendTip: user?.frontend_tip || '写下你想说的话，我会转达给主人',
+    echolinkWebhookBase: db.prepare('SELECT value FROM settings WHERE key = ?').get('echolink_webhook_base')?.value || '',
     hasPassword: !!db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password')
   });
 });
