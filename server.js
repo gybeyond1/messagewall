@@ -12,9 +12,11 @@ const DEFAULT_ADMIN_PASSWORD = 'admin123';
 const DEFAULT_WALL_USER = 'gybeyond';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'messages.db');
 
+// 确保数据目录存在
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
+// 初始化数据库
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -48,15 +50,18 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+// 兼容旧库：补列
 try { db.exec(`ALTER TABLE messages ADD COLUMN voice_path TEXT DEFAULT ''`); } catch (_) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN wall_username TEXT DEFAULT 'gybeyond'`); } catch (_) {}
 
+// 初始化管理员密码
 const passwordHash = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password') || null;
 if (!passwordHash) {
   const salt = bcrypt.genSaltSync(10);
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('admin_password', bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, salt));
 }
 
+// 迁移：把旧的全局 settings 配置迁移到默认用户 gybeyond
 function migrateDefaultUser() {
   const existing = db.prepare('SELECT id FROM wall_users WHERE username = ?').get(DEFAULT_WALL_USER);
   if (existing) return;
@@ -73,10 +78,12 @@ function migrateDefaultUser() {
 }
 migrateDefaultUser();
 
+// 获取留言板用户配置
 function getWallUser(username) {
   return db.prepare('SELECT * FROM wall_users WHERE username = ?').get(username) || null;
 }
 
+// ============ 通知发送（按用户配置） ============
 function buildWebhookBody(title, content, imageDataUri, voiceDataUri) {
   const body = { source: "messagewall", title, content };
   if (imageDataUri) body.image = imageDataUri;
@@ -90,16 +97,21 @@ async function sendWebhook(user, title, content, imageDataUri, voiceDataUri) {
   const wEnabled = user.webhook_enabled === 'true';
   if (!wEnabled || !wUrl) return;
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     await fetch(wUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildWebhookBody(title, content, imageDataUri, voiceDataUri))
+      body: JSON.stringify(buildWebhookBody(title, content, imageDataUri, voiceDataUri)),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
   } catch (e) {
     console.error('Webhook 发送失败:', e.message);
   }
 }
 
+// ffmpeg 转 AMR
 function convertToAmr(inputPath) {
   return new Promise((resolve, reject) => {
     const outputPath = inputPath + '.amr';
@@ -151,6 +163,7 @@ async function sendWeChatWork(user, title, content, imageDataUri, imagePath, voi
     accessToken = tokenData.access_token;
   } catch (e) { console.error('企业微信获取 token 失败:', e.message); return; }
 
+  // 有语音 → 先发文本通知，再发语音条
   if (voicePath) {
     let noticeText;
     if (content && content.trim()) {
@@ -177,6 +190,7 @@ async function sendWeChatWork(user, title, content, imageDataUri, imagePath, voi
     return;
   }
 
+  // 带图且配置了图片公网地址 → news 图文
   if (imagePath && picBase) {
     const imgUrl = picBase.replace(/\/+$/, '') + '/uploads/' + imagePath;
     const desc = (content && content.trim()) ? `📝留言：${content}` : '（仅图片留言）';
@@ -189,6 +203,7 @@ async function sendWeChatWork(user, title, content, imageDataUri, imagePath, voi
     } catch (e) { console.error('企业微信发送 news 失败:', e.message); return; }
   }
 
+  // 无图 → 文本
   let text;
   if (imagePath && !picBase) {
     text = `🆕你有一条新留言（⚠️未配置图片公网地址，图片未推送）\n\n👨🏻用户：${title}\n📝留言：${content || '（仅图片）'}`;
@@ -203,6 +218,7 @@ async function sendWeChatWork(user, title, content, imageDataUri, imagePath, voi
   } catch (e) { console.error('企业微信发送文字失败:', e.message); }
 }
 
+// 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -211,6 +227,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+// ============ 文件上传配置 ============
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_VOICE_SIZE = 10 * 1024 * 1024;
@@ -228,6 +245,7 @@ const upload = multer({
   }
 });
 
+// ============ 前端路由 ============
 app.get('/message', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -236,6 +254,7 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// 用户留言板路由：/:username（排除保留路径）
 const RESERVED_PATHS = ['admin', 'message', 'api', 'uploads', 'favicon.ico'];
 app.get('/:username', (req, res, next) => {
   const username = req.params.username;
@@ -245,6 +264,7 @@ app.get('/:username', (req, res, next) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ============ 提交留言（通用处理函数） ============
 async function handleMessageSubmit(req, res, wallUsername) {
   const user = getWallUser(wallUsername);
   if (!user) return res.status(404).json({ error: '留言板用户不存在' });
@@ -304,9 +324,12 @@ async function handleMessageSubmit(req, res, wallUsername) {
   });
 }
 
+// 默认留言板（兼容旧地址）
 app.post('/api/message', (req, res) => handleMessageSubmit(req, res, DEFAULT_WALL_USER));
+// 指定用户留言板
 app.post('/api/message/:username', (req, res) => handleMessageSubmit(req, res, req.params.username));
 
+// ============ 管理员认证 ============
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   const stored = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_password');
@@ -317,6 +340,7 @@ app.post('/api/admin/login', (req, res) => {
   }
 });
 
+// ============ 留言管理 ============
 app.get('/api/messages', (req, res) => {
   const { username } = req.query;
   let msgs;
@@ -354,6 +378,7 @@ app.delete('/api/messages', (req, res) => {
   res.json({ success: true });
 });
 
+// ============ 留言板用户管理 ============
 app.get('/api/users', (req, res) => {
   const users = db.prepare('SELECT id, username, display_name, webhook_url, webhook_enabled, wx_corpid, wx_agentid, wx_userid, wx_pic_base, frontend_tip, created_at FROM wall_users ORDER BY id ASC').all();
   res.json(users);
@@ -404,6 +429,7 @@ app.delete('/api/users/:username', (req, res) => {
   if (username === DEFAULT_WALL_USER) return res.status(400).json({ error: '默认用户不可删除' });
   const user = getWallUser(username);
   if (!user) return res.status(404).json({ error: '用户不存在' });
+  // 删除该用户的留言和文件
   const msgs = db.prepare('SELECT image_path, voice_path FROM messages WHERE wall_username = ?').all(username);
   msgs.forEach(m => {
     if (m?.image_path) { const p = path.join(uploadsDir, m.image_path); if (fs.existsSync(p)) fs.unlinkSync(p); }
@@ -414,7 +440,9 @@ app.delete('/api/users/:username', (req, res) => {
   res.json({ success: true });
 });
 
+// ============ 配置（兼容旧接口 + 新接口） ============
 app.put('/api/settings', (req, res) => {
+  // 旧接口：更新默认用户配置
   const { webhookUrl, webhookEnabled, newPassword, wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip } = req.body;
   db.prepare(`UPDATE wall_users SET webhook_url=?, webhook_enabled=?, wx_corpid=?, wx_agentid=?, wx_secret=?, wx_userid=?, wx_message_format=?, wx_pic_base=?, frontend_tip=? WHERE username=?`).run(
     webhookUrl ?? '', webhookEnabled ? 'true' : 'false',
@@ -444,6 +472,7 @@ app.get('/api/settings', (req, res) => {
   });
 });
 
+// 公开配置（首页提示语）
 app.get('/api/config', (req, res) => {
   const user = getWallUser(DEFAULT_WALL_USER);
   res.json({ frontendTip: user?.frontend_tip || '写下你想说的话，我会转达给主人', wallUsername: DEFAULT_WALL_USER });
@@ -454,6 +483,7 @@ app.get('/api/config/:username', (req, res) => {
   res.json({ frontendTip: user.frontend_tip || '写下你想说的话，我会转达给主人', wallUsername: user.username });
 });
 
+// ============ 测试 Webhook ============
 app.post('/api/webhook/test', async (req, res) => {
   const { url, title, content } = req.body;
   if (!url) return res.status(400).json({ error: 'URL 不能为空' });
@@ -467,6 +497,7 @@ app.post('/api/webhook/test', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// ============ 测试企业微信 ============
 app.post('/api/wx/test', async (req, res) => {
   const { corpId, agentId, secret, userId } = req.body;
   if (!corpId || !secret || !userId) return res.status(400).json({ error: '请填写完整的企业微信配置' });
@@ -485,6 +516,7 @@ app.post('/api/wx/test', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// ============ 启动 ============
 app.listen(PORT, () => {
   console.log(`留言板服务已启动 → http://localhost:${PORT}/message`);
   console.log(`管理后台 → http://localhost:${PORT}/admin`);
