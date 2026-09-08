@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2f38">
+  <title>留言板</title>
+  <style>
+    :root {
+      --bg: #2b2f38;
+      --surface: #2b2f38;
+      --shadow-light: #3a3f4b;
+      --shadow-dark: #1e2128;
+      --text: #e6e9f0;
+      --text-soft: #9aa1b2;
+      --text-faint: #6b7280;
+      --accent: #7c6cf0;
+      --accent-strong: #6c5ce7;
+      --danger: #ff7a8a;
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* 适配刘海/灵动岛安全区 */
+      padding: calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== 新拟态卡片：从背景"凸出" ===== */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 440px;
+      padding: 18px 18px 20px;
+      box-shadow:
+        14px 14px 28px var(--shadow-dark),
+        -14px -14px 28px var(--shadow-light);
+    }
+
+    .card-header {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .card-header .badge {
+      width: 46px;
+      height: 46px;
+      margin: 0 auto 8px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 21px;
+      background: var(--surface);
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+    }
+
+    .card-header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .card-header p {
+      font-size: 12.5px;
+      color: var(--text-soft);
+      line-height: 1.5;
+      padding: 0 4px;
+    }
+
+    /* 姓名 + 联系方式 并排一行，节省垂直空间 */
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 380px) {
+      .row-2 { grid-template-columns: 1fr; }
+    }
+
+    .field { margin-bottom: 12px; }
+
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .field label .required { color: var(--danger); margin-left: 3px; }
+    .field label .optional { color: var(--text-faint); font-weight: 400; margin-left: 4px; font-size: 12px; }
+
+    /* ===== 输入框：新拟态"按进去" ===== */
+    .field input,
+    .field textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: none;
+      border-radius: 13px;
+      font-size: 16px; /* ≥16px 防止 iOS 聚焦时自动放大 */
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+      line-height: 1.5;
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+      transition: box-shadow 0.2s ease;
+    }
+
+    .field input::placeholder,
+    .field textarea::placeholder { color: var(--text-faint); }
+
+    .field input:focus,
+    .field textarea:focus {
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light),
+        0 0 0 2px rgba(124,108,240,0.55);
+    }
+
+    .field textarea {
+      min-height: 72px;
+      resize: none;
+    }
+
+    /* ===== 图片上传区：拍照 + 相册 两个按钮 ===== */
+    .upload-area {
+      border: none;
+      border-radius: 13px;
+      padding: 10px;
+      background: var(--surface);
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+      position: relative;
+      transition: box-shadow 0.2s ease;
+    }
+
+    .upload-btns {
+      display: flex;
+      gap: 12px;
+    }
+
+    .upload-btn {
+      flex: 1;
+      border: none;
+      border-radius: 11px;
+      padding: 9px 8px;
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+      transition: box-shadow 0.12s ease, transform 0.12s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .upload-btn:active {
+      transform: scale(0.98);
+      box-shadow: inset 4px 4px 10px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light);
+    }
+
+    .upload-icon {
+      font-size: 23px;
+      filter: drop-shadow(2px 2px 2px var(--shadow-dark)) drop-shadow(-1px -1px 1px var(--shadow-light));
+    }
+
+    .upload-text { font-size: 13px; color: var(--text-soft); }
+
+    .upload-preview {
+      max-width: 100%;
+      max-height: 180px;
+      border-radius: 12px;
+      display: none;
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+    }
+
+    .upload-preview.show { display: block; margin: 0 auto; }
+
+    .upload-remove {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--surface);
+      color: var(--text-soft);
+      border: none;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      font-size: 15px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+      z-index: 3;
+    }
+    .upload-remove:active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+    }
+
+    .upload-area.has-image { padding: 10px; }
+    .upload-area.has-image .upload-remove { display: flex; }
+    .upload-area.has-image .upload-btns { display: none; }
+
+    /* ===== 语音录制区 ===== */
+    .voice-area {
+      border: none;
+      border-radius: 13px;
+      padding: 10px;
+      text-align: center;
+      background: var(--surface);
+      box-shadow:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+      position: relative;
+    }
+
+    .voice-btn {
+      width: 100%;
+      min-height: 42px;
+      padding: 10px;
+      color: var(--text);
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--surface);
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+      transition: box-shadow 0.12s ease, transform 0.12s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    .voice-btn:active, .voice-btn.recording {
+      transform: scale(0.98);
+      box-shadow: inset 4px 4px 10px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light);
+      color: var(--accent);
+    }
+
+    /* ===== 录音浮层 ===== */
+    .record-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(18,20,26,0.72);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .record-overlay.show { display: flex; }
+    .record-box {
+      background: var(--surface);
+      border-radius: 26px;
+      padding: 30px 38px 24px;
+      text-align: center;
+      min-width: 180px;
+      box-shadow: 14px 14px 28px var(--shadow-dark), -14px -14px 28px var(--shadow-light);
+    }
+    .record-icon {
+      width: 76px; height: 76px;
+      margin: 0 auto 14px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px;
+      background: var(--surface);
+      box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+      transition: color 0.15s;
+    }
+    .record-icon.cancel { color: var(--danger); }
+    .record-tip {
+      font-size: 14px;
+      color: var(--text-soft);
+      font-weight: 500;
+    }
+    .record-tip.cancel { color: var(--danger); }
+    .record-duration {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===== 语音气泡预览 ===== */
+    .voice-bubble {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px 12px 12px;
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light);
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: box-shadow 0.12s;
+    }
+    .voice-bubble:active {
+      box-shadow: inset 3px 3px 8px var(--shadow-dark), inset -3px -3px 8px var(--shadow-light);
+    }
+    .voice-play-icon {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface);
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      flex-shrink: 0;
+      font-size: 0;
+    }
+    /* WiFi 信号三格图标 */
+    .voice-wifi {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 16px;
+    }
+    .voice-wifi i {
+      display: block;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+      opacity: 0.35;
+    }
+    .voice-wifi i:nth-child(1) { height: 6px; }
+    .voice-wifi i:nth-child(2) { height: 11px; }
+    .voice-wifi i:nth-child(3) { height: 16px; }
+    .voice-bubble.playing .voice-wifi i {
+      animation: wifiBlink 0.8s ease-in-out infinite;
+    }
+    .voice-bubble.playing .voice-wifi i:nth-child(2) { animation-delay: 0.15s; }
+    .voice-bubble.playing .voice-wifi i:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes wifiBlink {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
+    }
+    .voice-duration {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      text-align: left;
+      font-variant-numeric: tabular-nums;
+    }
+    .voice-remove {
+      position: absolute;
+      top: -9px; right: -9px;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--danger);
+      color: #fff;
+      border: 2px solid var(--surface);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 2px 2px 6px var(--shadow-dark);
+      z-index: 5;
+      line-height: 1;
+    }
+
+    /* ===== 提交按钮：凸出 + 主题色 ===== */
+    .btn-submit {
+      width: 100%;
+      min-height: 46px;
+      margin-top: 2px;
+      padding: 12px;
+      color: #fff;
+      border: none;
+      border-radius: 16px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      background: linear-gradient(145deg, #7b6cf0, var(--accent-strong));
+      box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+      transition: box-shadow 0.12s ease, transform 0.12s ease;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.985);
+      box-shadow: inset 5px 5px 10px rgba(0,0,0,0.18), inset -5px -5px 10px rgba(255,255,255,0.18);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+    }
+
+    /* ===== 成功弹层 ===== */
+    .success-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(18,20,26,0.66);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 24px;
+    }
+    .success-overlay.show { display: flex; }
+
+    .success-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 38px 30px;
+      text-align: center;
+      max-width: 320px;
+      width: 100%;
+      box-shadow: 14px 14px 28px var(--shadow-dark), -14px -14px 28px var(--shadow-light);
+      animation: pop 0.32s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    }
+
+    @keyframes pop {
+      from { transform: scale(0.82); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .success-box .icon {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      background: var(--surface);
+      box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+    }
+
+    .success-box h2 { font-size: 19px; color: var(--text); margin-bottom: 8px; }
+    .success-box p { font-size: 14px; color: var(--text-soft); margin-bottom: 22px; line-height: 1.6; }
+
+    .success-box button {
+      padding: 13px 36px;
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(145deg, #7b6cf0, var(--accent-strong));
+      box-shadow: 5px 5px 12px var(--shadow-dark), -5px -5px 12px var(--shadow-light);
+    }
+    .success-box button:active {
+      box-shadow: inset 4px 4px 8px rgba(0,0,0,0.18), inset -4px -4px 8px rgba(255,255,255,0.18);
+    }
+
+    .error-msg {
+      color: var(--danger);
+      font-size: 12px;
+      margin-top: 6px;
+      display: none;
+    }
+
+    /* 超小屏微调 */
+    @media (max-width: 360px) {
+      .card { padding: 16px 14px; border-radius: 18px; }
+      .card-header .badge { width: 42px; height: 42px; font-size: 19px; }
+      .card-header h1 { font-size: 17px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <div class="badge">📮</div>
+      <h1>留言板</h1>
+      <p id="tipText">写下你想说的话，我会转达给主人</p>
+    </div>
+    <div class="card-body">
+      <form id="msgForm">
+        <div class="row-2">
+          <div class="field">
+            <label>怎么称呼您？<span class="optional">选填</span></label>
+            <input type="text" id="name" placeholder="您的称呼" maxlength="30">
+          </div>
+          <div class="field">
+            <label>联系方式 <span class="optional">选填</span></label>
+            <input type="text" id="contact" placeholder="手机号/微信" maxlength="50">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>留言内容 <span class="optional">选填 · 可只发图片/语音</span></label>
+          <textarea id="content" placeholder="写下你想说的话...（可留空，只发图片或语音）" maxlength="500"></textarea>
+          <div class="error-msg" id="contentErr">请填写内容、添加图片或录制语音（至少一项）</div>
+        </div>
+
+        <div class="field">
+          <label>添加图片 / 拍照 <span class="optional">选填</span></label>
+          <div class="upload-area" id="uploadArea">
+            <div class="upload-btns" id="uploadBtns">
+              <button type="button" class="upload-btn" id="btnCamera">
+                <div class="upload-icon">📷</div>
+                <div class="upload-text">拍照</div>
+              </button>
+              <button type="button" class="upload-btn" id="btnGallery">
+                <div class="upload-icon">🖼️</div>
+                <div class="upload-text">从相册选择</div>
+              </button>
+            </div>
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+            <input type="file" id="galleryInput" accept="image/*" style="display:none">
+            <img class="upload-preview" id="preview" alt="预览">
+            <button type="button" class="upload-remove" id="removeBtn">✕</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>语音留言 <span class="optional">选填</span></label>
+          <div class="voice-area" id="voiceArea">
+            <button type="button" class="voice-btn" id="voiceBtn">🎤 按住说话，上滑取消</button>
+            <div class="voice-bubble" id="voiceBubble" style="display:none">
+              <div class="voice-play-icon">
+                <span class="voice-wifi"><i></i><i></i><i></i></span>
+              </div>
+              <span class="voice-duration" id="voiceDuration">0"</span>
+              <button type="button" class="voice-remove" id="voiceRemove">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="submitBtn">提交留言</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="success-overlay" id="successOverlay">
+    <div class="success-box">
+      <div class="icon">✅</div>
+      <h2>留言已提交！</h2>
+      <p>感谢您的留言，主人会尽快看到的~</p>
+      <button onclick="location.reload()">再写一条</button>
+    </div>
+  </div>
+
+  <!-- 录音浮层 -->
+  <div class="record-overlay" id="recordOverlay">
+    <div class="record-box">
+      <div class="record-icon" id="recordIcon">🎙️</div>
+      <div class="record-duration" id="recordDuration">0"</div>
+      <div class="record-tip" id="recordTip">松开发送，上滑取消</div>
+    </div>
+  </div>
+
+  <script>
+    // 从 URL 路径解析当前留言板用户（/zhangsan -> zhangsan，/message 或 / -> 默认 gybeyond）
+    const pathParts = location.pathname.split('/').filter(Boolean);
+    const currentWallUser = (pathParts.length > 0 && pathParts[0] !== 'message' && pathParts[0] !== 'admin') ? pathParts[0] : '';
+    const configApi = currentWallUser ? '/api/config/' + currentWallUser : '/api/config';
+    const submitApi = currentWallUser ? '/api/message/' + currentWallUser : '/api/message';
+
+    // 加载管理员配置的首页提示语（可自定义，如留私人号码供紧急联系）
+    fetch(configApi).then(r => r.json()).then(d => {
+      if (d && d.frontendTip) document.getElementById('tipText').textContent = d.frontendTip;
+    }).catch(() => {});
+
+    const form = document.getElementById('msgForm');
+    const cameraInput = document.getElementById('cameraInput');
+    const galleryInput = document.getElementById('galleryInput');
+    const uploadArea = document.getElementById('uploadArea');
+    const preview = document.getElementById('preview');
+    const removeBtn = document.getElementById('removeBtn');
+    let selectedFile = null;
+
+    // ===== 语音录制 =====
+    const voiceBtn = document.getElementById('voiceBtn');
+    const voiceBubble = document.getElementById('voiceBubble');
+    const voiceDuration = document.getElementById('voiceDuration');
+    const voiceRemove = document.getElementById('voiceRemove');
+    const recordOverlay = document.getElementById('recordOverlay');
+    const recordIcon = document.getElementById('recordIcon');
+    const recordTip = document.getElementById('recordTip');
+    const recordDurationEl = document.getElementById('recordDuration');
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordedBlob = null;
+    let recordStartTime = 0;
+    let recordTimer = null;
+    let startY = 0;
+    let isCancel = false;
+    let audioPlayer = null;
+    const CANCEL_THRESHOLD = 80; // 上滑超过 80px 取消
+
+    // 拍照 / 相册按钮
+    document.getElementById('btnCamera').addEventListener('click', () => cameraInput.click());
+    document.getElementById('btnGallery').addEventListener('click', () => galleryInput.click());
+
+    function handleImageSelected(file) {
+      if (!file) return;
+      selectedFile = file;
+      const reader = new FileReader();
+      reader.onload = e => {
+        preview.src = e.target.result;
+        preview.classList.add('show');
+        uploadArea.classList.add('has-image');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    cameraInput.addEventListener('change', function() {
+      handleImageSelected(this.files[0]);
+    });
+    galleryInput.addEventListener('change', function() {
+      handleImageSelected(this.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      selectedFile = null;
+      cameraInput.value = '';
+      galleryInput.value = '';
+      preview.src = '';
+      preview.classList.remove('show');
+      uploadArea.classList.remove('has-image');
+    });
+
+    // ===== 语音录制逻辑 =====
+    async function startRecording(clientY) {
+      if (mediaRecorder && mediaRecorder.state === 'recording') return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        let mime = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mime)) mime = 'audio/webm';
+        if (!MediaRecorder.isTypeSupported(mime)) mime = '';
+        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          hideRecordOverlay();
+          if (isCancel) { resetVoiceUI(); return; }
+          const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          if (blob.size < 1000) { resetVoiceUI(); return; }
+          recordedBlob = blob;
+          const sec = Math.max(1, Math.floor((Date.now() - recordStartTime) / 1000));
+          voiceDuration.textContent = sec + '"';
+          voiceBtn.style.display = 'none';
+          voiceBubble.style.display = 'flex';
+        };
+        mediaRecorder.start();
+        recordStartTime = Date.now();
+        startY = clientY;
+        isCancel = false;
+        voiceBtn.classList.add('recording');
+        showRecordOverlay();
+        recordTimer = setInterval(() => {
+          const sec = Math.floor((Date.now() - recordStartTime) / 1000);
+          recordDurationEl.textContent = sec + '"';
+          if (sec >= 60) finishRecording(false); // 最长 60 秒
+        }, 200);
+      } catch (err) {
+        alert('无法访问麦克风：' + err.message);
+        resetVoiceUI();
+      }
+    }
+
+    function updateCancelState(clientY) {
+      if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+      const dy = startY - clientY; // 上滑为正
+      isCancel = dy > CANCEL_THRESHOLD;
+      if (isCancel) {
+        recordIcon.classList.add('cancel');
+        recordIcon.textContent = '✕';
+        recordTip.classList.add('cancel');
+        recordTip.textContent = '松开取消';
+      } else {
+        recordIcon.classList.remove('cancel');
+        recordIcon.textContent = '🎙️';
+        recordTip.classList.remove('cancel');
+        recordTip.textContent = '松开发送，上滑取消';
+      }
+    }
+
+    function finishRecording(forceCancel) {
+      if (forceCancel) isCancel = true;
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+      if (recordTimer) { clearInterval(recordTimer); recordTimer = null; }
+      voiceBtn.classList.remove('recording');
+    }
+
+    function showRecordOverlay() {
+      recordDurationEl.textContent = '0"';
+      recordIcon.classList.remove('cancel');
+      recordIcon.textContent = '🎙️';
+      recordTip.classList.remove('cancel');
+      recordTip.textContent = '松开发送，上滑取消';
+      recordOverlay.classList.add('show');
+    }
+
+    function hideRecordOverlay() {
+      recordOverlay.classList.remove('show');
+    }
+
+    function resetVoiceUI() {
+      stopPlayback();
+      recordedBlob = null;
+      audioChunks = [];
+      voiceBtn.style.display = '';
+      voiceBubble.style.display = 'none';
+      voiceBubble.classList.remove('playing');
+      voiceBtn.classList.remove('recording');
+    }
+
+    // 按住录音（触摸）
+    voiceBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      startRecording(e.touches[0].clientY);
+    });
+    voiceBtn.addEventListener('touchmove', e => {
+      e.preventDefault();
+      updateCancelState(e.touches[0].clientY);
+    });
+    voiceBtn.addEventListener('touchend', e => {
+      e.preventDefault();
+      finishRecording(false);
+    });
+    voiceBtn.addEventListener('touchcancel', () => finishRecording(true));
+
+    // 按住录音（鼠标，用于桌面调试）
+    voiceBtn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      startRecording(e.clientY);
+    });
+    document.addEventListener('mousemove', e => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') updateCancelState(e.clientY);
+    });
+    document.addEventListener('mouseup', () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') finishRecording(false);
+    });
+
+    // 语音气泡点击播放
+    voiceBubble.addEventListener('click', e => {
+      if (e.target === voiceRemove) return;
+      if (!recordedBlob) return;
+      if (audioPlayer && !audioPlayer.paused) {
+        stopPlayback();
+      } else {
+        playVoice();
+      }
+    });
+
+    function playVoice() {
+      stopPlayback();
+      audioPlayer = new Audio(URL.createObjectURL(recordedBlob));
+      audioPlayer.onended = () => { voiceBubble.classList.remove('playing'); audioPlayer = null; };
+      audioPlayer.play().catch(() => {});
+      voiceBubble.classList.add('playing');
+    }
+
+    function stopPlayback() {
+      if (audioPlayer) {
+        audioPlayer.pause();
+        audioPlayer = null;
+      }
+      voiceBubble.classList.remove('playing');
+    }
+
+    voiceRemove.addEventListener('click', e => {
+      e.stopPropagation();
+      resetVoiceUI();
+    });
+
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const content = document.getElementById('content').value.trim();
+      const contact = document.getElementById('contact').value.trim();
+
+      let valid = true;
+      document.getElementById('contentErr').style.display = 'none';
+
+      if (!content && !selectedFile && !recordedBlob) {
+        document.getElementById('contentErr').style.display = 'block';
+        valid = false;
+      }
+      if (!valid) return;
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = '提交中...';
+
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('content', content);
+      formData.append('contact', contact);
+      if (selectedFile) formData.append('image', selectedFile);
+      if (recordedBlob) formData.append('voice', recordedBlob, 'recording.' + (recordedBlob.type.includes('mp4') ? 'm4a' : 'webm'));
+
+      try {
+        const res = await fetch(submitApi, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('successOverlay').classList.add('show');
+        } else {
+          alert('提交失败，请重试');
+        }
+      } catch (err) {
+        alert('网络错误，请检查连接后重试');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '提交留言';
+      }
+    });
+  </script>
+</body>
+</html>
