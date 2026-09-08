@@ -186,6 +186,9 @@ a{text-decoration:none;color:inherit}
         <button class="btn btn-primary btn-sm" onclick="testWx()">🧪 测试发送</button>
         <div id="wxTestResult" style="font-size:13px;margin-top:6px"></div>
       </div>
+      <div class="card"><h3>EchoLink 联动</h3>
+        <div class="fg"><label>EchoLink 局域网地址</label><input type="text" id="echolinkBase" placeholder="http://192.168.x.x:4000"><div class="hint">EchoLink 注册新用户时自动在此留言板创建对应用户，Webhook 地址自动拼接为「此地址/api/webhook/messagewall/用户名」。填内网地址即可</div></div>
+      </div>
       <div class="card"><h3>修改管理员密码</h3>
         <div class="fg"><label>新密码</label><input type="password" id="newPwd" placeholder="留空则不修改"></div>
       </div>
@@ -279,6 +282,7 @@ async function loadSettings() {
     document.getElementById('wxMessageFormat').value = data.wxMessageFormat || '[留言板]\n{title}\n\n{content}';
     document.getElementById('wxPicBase').value = data.wxPicBase || '';
     document.getElementById('frontendTip').value = data.frontendTip || '写下你想说的话，我会转达给主人';
+    document.getElementById('echolinkBase').value = data.echolinkWebhookBase || '';
   } catch(e) {}
 }
 
@@ -293,10 +297,11 @@ async function saveSettings() {
   const wxMessageFormat = document.getElementById('wxMessageFormat').value.trim();
   const wxPicBase = document.getElementById('wxPicBase').value.trim();
   const frontendTip = document.getElementById('frontendTip').value.trim();
+  const echolinkWebhookBase = document.getElementById('echolinkBase').value.trim();
   await fetch(API + '/settings', {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({webhookUrl:url, webhookEnabled:enabled, newPassword:newPwd,
-      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip})
+      wxCorpid, wxAgentid, wxSecret, wxUserid, wxMessageFormat, wxPicBase, frontendTip, echolinkWebhookBase})
   });
   const msg = document.getElementById('settingsMsg');
   msg.textContent = '✅ 设置已保存'; msg.style.color = '#4ade80';
